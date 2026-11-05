@@ -6,7 +6,7 @@ Target: **https://togacards.co.uk**. The application runs in Docker behind the s
 
 - Ubuntu x86-64, rootful Docker Engine, Docker Compose **2.30+**, Nginx, Python **3.11+**, sudo and Certbot. Install Docker using its [Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/) if needed. The app's own Node runtime is supplied by Docker.
 - Dedicated Compose project `toga-cards`; external Docker volume `toga_cards_production_data`.
-- App listens only on `127.0.0.1:3100`; Nginx is the public entry point on ports 80/443.
+- App listens only on `127.0.0.1:3100`; Nginx is the public entry point on ports 80/443. The release image contains an internal Nginx gateway, PHP-FPM for Laravel/Filament and Node for the storefront/inventory service. No host PHP or Composer is required.
 - Root-owned configuration/secrets in `/etc/toga-cards`, state and deployment backups in `/var/lib/toga-cards`.
 - SSH deployment account `toga-cards-deploy`, separate from the existing administrator/`actions-runner` login. It is not a self-hosted Actions runner and does not join the Docker group.
 - Runtime image is built/tested once in CI, tagged by commit SHA, transferred over SSH, checksum-checked, loaded and health-checked. The previous image is restarted if rollout fails. Rollback does **not** overwrite the database: it could contain payments accepted after deployment.
@@ -44,7 +44,7 @@ Complete Certbot's email/terms prompts yourself. Verify renewal is enabled (`sys
 python deploy/export-inventory.py --stop-local
 ```
 
-This intentionally stops `togacards-cards-1`, leaves the existing Docker volume intact, copies the complete stopped database directory, creates a portable SQLite backup, verifies its integrity and exports a **private** bundle under ignored `.backups/`. The bundle includes credentials and the original eBay encryption key. Do not commit it, put it in GitHub Actions artifacts, or send it through public links.
+Run `python scripts/configure-admin.py` and start the current Docker release before cutover so the Laravel database exists. Export intentionally stops `togacards-cards-1`, leaves the volume intact, copies the complete stopped data directory, creates portable backups of both `cards.sqlite` and `admin.sqlite`, and exports a **private** bundle under ignored `.backups/`. It includes uploaded card photos, administrator accounts/MFA, sessions, audit history, credentials, `LARAVEL_APP_KEY`, `ADMIN_SERVICE_KEY` and the original eBay encryption key. Losing/changing the Laravel key makes existing MFA secrets unreadable. Do not commit it, put it in GitHub Actions artifacts, or send it through public links.
 
 Use your working management SSH account to create a private upload directory:
 
@@ -96,7 +96,7 @@ Watch the Actions run through completion. Check `/api/health`, `/shop`, admin au
 
 ## Backups and recovery
 
-Each deployment stops only this app briefly and takes a consistent database/environment backup before replacing the container. Backups remain root-only under `/var/lib/toga-cards/backups`; monitor disk usage and maintain independent encrypted/offsite backups. They include sensitive seller tokens and may include order contact information. Apply the relevant account-deletion/retention policy to backups as well.
+Each deployment stops only this app briefly and takes a consistent backup of both databases, their WAL/SHM files, uploaded photos and the environment before replacing the container. Backups remain root-only under `/var/lib/toga-cards/backups`; monitor disk usage and maintain independent encrypted/offsite backups. They include sensitive seller tokens and may include order contact information. Apply the relevant account-deletion/retention policy to backups as well.
 
 Never run `docker compose down -v`, delete the external volume, or copy another database's WAL/SHM files into it. Restore a reviewed backup only with the app stopped and after backing up the current state again. A failed release restarts the previous **image**, preserving the current database; restoring an older database automatically could lose paid orders.
 

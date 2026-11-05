@@ -84,22 +84,31 @@ class ReceiverTests(unittest.TestCase):
                 for name in ["cards", "movements", "sales"]:
                     db.execute("CREATE TABLE " + name + " (id INTEGER PRIMARY KEY)")
                 db.execute("INSERT INTO cards VALUES (1)")
+            admin = root / "admin.sqlite"
+            with sqlite3.connect(admin) as db:
+                db.execute("CREATE TABLE users (email TEXT)")
+                db.execute("INSERT INTO users VALUES ('synthetic@example.test')")
+            photos = root / "photos.tar"
+            tar_files(photos, [("cards/synthetic.png", b"synthetic-image")])
             environment = (
-                "SHOP_URL=https://togacards.co.uk\nADMIN_PASSWORD=synthetic-test-only\nEBAY_TOKEN_KEY="
+                "SHOP_URL=https://togacards.co.uk\nADMIN_PASSWORD=synthetic-test-only\nADMIN_SERVICE_KEY=" + "a" * 64 + "\nLARAVEL_APP_KEY=base64:" + "A" * 43 + "=\nEBAY_TOKEN_KEY="
                 + "c" * 64
                 + "\n"
             )
             metadata = {
-                "schema": 1,
+                "schema": 2,
                 "counts": {"cards": 1, "movements": 0, "sales": 0},
                 "database_sha256": server.digest(source),
                 "ebay_key_sha256": hashlib.sha256(("c" * 64).encode()).hexdigest(),
+                "files": {"admin.sqlite": server.digest(admin), "photos.tar": server.digest(photos)},
             }
             bundle = root / "bundle.tar"
             tar_files(
                 bundle,
                 [
                     ("inventory.sqlite", source.read_bytes()),
+                    ("admin.sqlite", admin.read_bytes()),
+                    ("photos.tar", photos.read_bytes()),
                     ("runtime.env", environment.encode()),
                     ("manifest.json", json.dumps(metadata).encode()),
                 ],
@@ -115,12 +124,32 @@ class ReceiverTests(unittest.TestCase):
                 self.assertEqual(
                     server.inspect_database(data / "cards.sqlite"), metadata["counts"]
                 )
-                ownership.assert_called_with(data / "cards.sqlite", 1000, 1000)
+                ownership.assert_any_call(data / "cards.sqlite", 1000, 1000)
+                self.assertEqual(server.digest(data / "admin.sqlite"), server.digest(admin))
+                self.assertEqual((data / "admin-public/cards/synthetic.png").read_bytes(), b"synthetic-image")
                 with self.assertRaisesRegex(ValueError, "already exists"):
                     server.import_inventory(bundle)
                 self.assertEqual(
                     server.inspect_database(data / "cards.sqlite"), metadata["counts"]
                 )
+
+    def test_backup_preserves_admin_accounts_and_uploaded_photos(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "volume"
+            data.mkdir()
+            with sqlite3.connect(data / "cards.sqlite") as db:
+                for name in ["cards", "movements", "sales"]:
+                    db.execute("CREATE TABLE " + name + " (id INTEGER PRIMARY KEY)")
+            (data / "admin.sqlite").write_bytes(b"synthetic-admin-database")
+            photos = data / "admin-public/cards"
+            photos.mkdir(parents=True)
+            (photos / "test.jpg").write_bytes(b"synthetic-photo")
+            backup = root / "backup/data"
+            with patch.object(server, "volume_path", return_value=data):
+                server.backup_database(backup)
+            self.assertEqual((backup / "admin.sqlite").read_bytes(), b"synthetic-admin-database")
+            self.assertEqual((backup / "admin-public/cards/test.jpg").read_bytes(), b"synthetic-photo")
 
     def test_rollback_restarts_old_image_without_restoring_or_erasing_database(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -76,9 +76,24 @@ for line in (root / ".env").read_text().splitlines():
         raise ValueError("Invalid local environment line")
     if len(value) > 1 and value[0] == value[-1] and value[0] in ['"', "'"]:
         value = value[1:-1]
-    if key.startswith(("EBAY_", "STRIPE_", "ADMIN_")) or key == "SHOP_SHIPPING_PENCE":
+    if key.startswith(("EBAY_", "STRIPE_", "ADMIN_", "LARAVEL_")) or key == "SHOP_SHIPPING_PENCE":
         values[key] = value
 assert values.get("ADMIN_PASSWORD"), "Configure an admin password before export"
+assert re.fullmatch("[a-f0-9]{64}", values.get("ADMIN_SERVICE_KEY", "")), "Configure the private service key"
+assert values.get("LARAVEL_APP_KEY", "").startswith("base64:"), "Preserve the Laravel encryption key"
+with sqlite3.connect((source / "admin.sqlite").resolve().as_uri() + "?mode=ro", uri=True) as db:
+    assert db.execute("PRAGMA quick_check").fetchone()[0] == "ok", "Admin database failed integrity check"
+    with sqlite3.connect(directory / "admin.sqlite") as portable:
+        db.backup(portable)
+with tarfile.open(directory / "photos.tar", "w") as photos:
+    photo_root = source / "admin-public"
+    if photo_root.exists():
+        for path in photo_root.rglob("*"):
+            assert not path.is_symlink(), "Photo storage must not contain links"
+            if path.is_file():
+                name = path.relative_to(photo_root).as_posix()
+                assert re.fullmatch(r"cards/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)", name, re.I), "Unexpected photo filename"
+                photos.add(path, arcname=name)
 values["SHOP_URL"] = "https://togacards.co.uk"
 values.setdefault("ADMIN_USER", "admin")
 (directory / "runtime.env").write_text(
@@ -86,10 +101,15 @@ values.setdefault("ADMIN_USER", "admin")
 )
 with (directory / "inventory.sqlite").open("rb") as f:
     checksum = hashlib.file_digest(f, "sha256").hexdigest()
+file_checksums = {}
+for name in ("admin.sqlite", "photos.tar"):
+    with (directory / name).open("rb") as file:
+        file_checksums[name] = hashlib.file_digest(file, "sha256").hexdigest()
 manifest = {
-    "schema": 1,
+    "schema": 2,
     "database_sha256": checksum,
     "counts": counts,
+    "files": file_checksums,
     "ebay_key_sha256": hashlib.sha256(
         values.get("EBAY_TOKEN_KEY", "").encode()
     ).hexdigest(),
@@ -97,7 +117,7 @@ manifest = {
 (directory / "manifest.json").write_text(json.dumps(manifest, indent=2))
 bundle = directory / "inventory-cutover.tar.gz"
 with tarfile.open(bundle, "w:gz") as tar:
-    for name in ["inventory.sqlite", "runtime.env", "manifest.json"]:
+    for name in ["inventory.sqlite", "admin.sqlite", "photos.tar", "runtime.env", "manifest.json"]:
         tar.add(directory / name, arcname=name)
 print("Private inventory bundle:", bundle)
 print(

@@ -122,12 +122,17 @@ def backup_database(destination):
     source = volume_path()
     if not (source / "cards.sqlite").is_file():
         raise ValueError("Existing inventory database is missing")
-    for name in ("cards.sqlite", "cards.sqlite-wal", "cards.sqlite-shm"):
+    for name in ("cards.sqlite", "cards.sqlite-wal", "cards.sqlite-shm", "admin.sqlite", "admin.sqlite-wal", "admin.sqlite-shm"):
         path = source / name
         if path.is_symlink():
             raise ValueError("Inventory contains an unexpected symlink")
         if path.exists():
             shutil.copy2(path, destination / name)
+    photos = source / "admin-public"
+    if photos.exists():
+        if photos.is_symlink() or any(p.is_symlink() for p in photos.rglob("*")):
+            raise ValueError("Photo storage contains an unexpected symlink")
+        shutil.copytree(photos, destination / "admin-public")
     counts = inspect_database(destination / "cards.sqlite")
     (destination.parent / "database-counts.json").write_text(
         json.dumps(counts, indent=2)
@@ -266,11 +271,14 @@ def import_inventory(bundle):
         prefix="import-", dir=ROOT
     ) as temporary:
         staging = Path(temporary)
-        extract_exact(
-            bundle, staging, {"inventory.sqlite", "runtime.env", "manifest.json"}
-        )
+        with tarfile.open(bundle, "r:*") as archive:
+            has_admin = "admin.sqlite" in archive.getnames()
+        names = {"inventory.sqlite", "runtime.env", "manifest.json"}
+        if has_admin:
+            names |= {"admin.sqlite", "photos.tar"}
+        extract_exact(bundle, staging, names)
         m = json.loads((staging / "manifest.json").read_text())
-        if m.get("schema") != 1 or digest(staging / "inventory.sqlite") != m.get(
+        if m.get("schema") != (2 if has_admin else 1) or digest(staging / "inventory.sqlite") != m.get(
             "database_sha256"
         ):
             raise ValueError("Inventory checksum mismatch")
@@ -285,6 +293,32 @@ def import_inventory(bundle):
             raise ValueError(
                 "Production admin password and canonical HTTPS URL required"
             )
+        if not re.fullmatch("[a-f0-9]{64}", env.get("ADMIN_SERVICE_KEY", "")) or not re.fullmatch(
+            "base64:[A-Za-z0-9+/]{43}=", env.get("LARAVEL_APP_KEY", "")
+        ):
+            raise ValueError("Persistent Laravel application and private service keys required")
+        if has_admin:
+            for name in ("admin.sqlite", "photos.tar"):
+                if digest(staging / name) != m.get("files", {}).get(name):
+                    raise ValueError("Admin backup checksum mismatch")
+            with sqlite3.connect(
+                (staging / "admin.sqlite").resolve().as_uri() + "?mode=ro", uri=True
+            ) as db:
+                if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise ValueError("Admin database integrity check failed")
+            with tarfile.open(staging / "photos.tar", "r:") as archive:
+                photos = archive.getmembers()
+                if (
+                    len({p.name for p in photos}) != len(photos)
+                    or any(
+                        not p.isfile()
+                        or not re.fullmatch(r"cards/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)", p.name, re.I)
+                        or p.size < 0 or p.size > 6 * 1024**2
+                        for p in photos
+                    )
+                    or sum(p.size for p in photos) > MAX_ARCHIVE
+                ):
+                    raise ValueError("Invalid card photo archive")
         if hashlib.sha256(env.get("EBAY_TOKEN_KEY", "").encode()).hexdigest() != m.get(
             "ebay_key_sha256"
         ):
@@ -295,7 +329,7 @@ def import_inventory(bundle):
         target = data / "cards.sqlite"
         if any(
             (data / n).exists()
-            for n in ("cards.sqlite", "cards.sqlite-wal", "cards.sqlite-shm")
+            for n in ("cards.sqlite", "cards.sqlite-wal", "cards.sqlite-shm", "admin.sqlite", "admin-public")
         ):
             raise ValueError(
                 "Production database already exists; refusing to overwrite it"
@@ -310,6 +344,21 @@ def import_inventory(bundle):
             shutil.copyfileobj(source, destination)
         os.chmod(target, 0o600)
         os.chown(target, 1000, 1000)
+        if has_admin:
+            shutil.copy2(staging / "admin.sqlite", data / "admin.sqlite")
+            os.chown(data / "admin.sqlite", 1000, 1000)
+            os.chmod(data / "admin.sqlite", 0o600)
+            photo_directory = data / "admin-public" / "cards"
+            photo_directory.mkdir(parents=True, mode=0o700)
+            os.chown(photo_directory.parent, 1000, 1000)
+            os.chown(photo_directory, 1000, 1000)
+            with tarfile.open(staging / "photos.tar", "r:") as archive:
+                for photo in archive.getmembers():
+                    path = data / "admin-public" / photo.name
+                    with archive.extractfile(photo) as source, path.open("xb") as destination:
+                        shutil.copyfileobj(source, destination)
+                    os.chown(path, 1000, 1000)
+                    os.chmod(path, 0o600)
         CONFIG.mkdir(mode=0o700, parents=True, exist_ok=True)
         environment = CONFIG / "runtime.env"
         descriptor = os.open(environment, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

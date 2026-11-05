@@ -34,6 +34,7 @@ const child = spawn(process.execPath, [".output/server/index.mjs"], {
     PORT: String(port),
     DATA_DIR: directory,
     TOGA_PREVIEW: "1",
+    LARAVEL_ADMIN_ENABLED: "false",
     ADMIN_USER: "admin",
     ADMIN_PASSWORD: password,
     STRIPE_SECRET_KEY: "sk_test_synthetic",

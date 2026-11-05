@@ -1,8 +1,8 @@
 # TOGA Cards
 
-A Nuxt storefront prototype with a single-user Topps Premier League inventory and sales backend built with Nuxt 4, Vue, shadcn-vue, Tailwind CSS, and SQLite. Nuxt server routes provide the backend; Laravel is not required for this version.
+A Nuxt 4 storefront with a Laravel 13 / Filament 5 administration panel, Stripe checkout, eBay stock synchronisation and a shared SQLite inventory ledger.
 
-See [storefront setup and limitations](docs/storefront.md) for the public homepage, shop, Stripe setup and stock allocations. The inventory app now lives at `/admin`.
+See [storefront setup and limitations](docs/storefront.md) for Stripe and stock allocations. The Laravel admin lives at `/admin`: inventory and receipts, offline sales, website prices/photos/allocations, paid-order dispatch, eBay listing matching and order review, stock-sync controls, administrator accounts and an activity log.
 
 ## Ubuntu and GitHub deployment
 
@@ -10,7 +10,7 @@ See [Ubuntu/Nginx deployment and inventory cutover](docs/deployment.md). GitHub-
 
 ## Run locally
 
-Requires Node.js 22.22.3 or later (Node 22 LTS recommended).
+Use Docker for the complete storefront and Laravel admin. Node-only development requires Node.js 22.22.3 or later and runs the older inventory interface for development compatibility.
 
 ```powershell
 npm ci
@@ -22,10 +22,17 @@ Open http://127.0.0.1:3000. The app imports the official 2026/27 Topps Flagship 
 ## Docker
 
 ```powershell
+python scripts/configure-admin.py
 docker compose up -d --build
 ```
 
 Open http://127.0.0.1:3000. SQLite persists in the `cards-data` Docker volume. `docker compose down` preserves it; do not use `down -v` unless you intend to erase your collection. Stop the local development server first if it is using port 3000.
+
+Sign in at `/admin` with `LARAVEL_ADMIN_EMAIL` (default `admin@togacards.co.uk`) and the existing `ADMIN_PASSWORD` in your ignored `.env`. The setup script creates missing secrets and preserves existing ones. On first startup only, Laravel creates the administrator. Subsequent restarts never reset accounts or passwords. Use the account profile to change your password and enable authenticator-based two-factor authentication with recovery codes. Public registration is disabled; existing administrators create staff accounts.
+
+The image contains Nginx, PHP-FPM and Node. Laravel uses `/app/data/admin.sqlite` for users, sessions and audit entries; `/app/data/cards.sqlite` remains the authoritative stock ledger. Only the private loopback inventory service changes stock. Photos persist under `/app/data/admin-public/cards`. Back up the complete volume and `.env`, including `LARAVEL_APP_KEY`, which encrypts MFA secrets.
+
+For PHP development, build `docker build -f deploy/php-tools.Dockerfile -t toga-cards-php-tools .`, then use `python scripts/admin-dev.py composer install` and `python scripts/admin-dev.py php vendor/bin/phpunit`. Dependencies use Docker volumes; host PHP is optional.
 
 ## Accounting
 
@@ -42,7 +49,7 @@ Open http://127.0.0.1:3000. SQLite persists in the `cards-data` Docker volume. `
 
 Local data lives in `data/cards.sqlite` (override with `DATA_DIR`). Stop the app before copying the data directory for a backup. Docker and local development use separate databases. CSV export provides inventory and sales reports, not a complete restorable database backup.
 
-This version is for one collector on a trusted local machine. The supplied launch configurations bind to localhost. Set ADMIN_PASSWORD and serve over HTTPS before public hosting; admin and private APIs require authentication outside local access. Sales are immutable in this version; sale editing, refunds and CSV import are not implemented. Website listings support HTTPS photo URLs. The bundled official checklist includes 1,138 entries; unlisted colour parallels can be entered manually. See [catalogue provenance](catalog/README.md).
+The supplied launch configurations bind to localhost. Use HTTPS before public hosting. Laravel protects admin requests with sessions, CSRF checks and administrator access; the gateway blocks browser access to private stock APIs. Sales are immutable; refunds and CSV import are not implemented. Website listings accept uploaded JPEG/PNG/WebP images or hosted HTTPS photos. The bundled official checklist includes 1,138 entries; unlisted colour parallels can be entered manually. See [catalogue provenance](catalog/README.md).
 
 ## Validation
 

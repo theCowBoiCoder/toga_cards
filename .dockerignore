@@ -27,3 +27,13 @@ docs
 .wrangler
 .deployment-secrets
 __pycache__
+
+admin/vendor
+admin/.env
+admin/storage
+admin/bootstrap/cache
+admin/database/*.sqlite*
+admin/node_modules
+admin/public/css/filament
+admin/public/js/filament
+admin/public/fonts/filament

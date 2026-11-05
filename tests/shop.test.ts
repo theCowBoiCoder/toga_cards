@@ -147,3 +147,23 @@ test("condition assessment can publish catalogue stock without creating duplicat
   assert.equal(inv.shop.products()[0].condition, "Excellent");
   inv.close();
 });
+
+test('dispatch requires a paid order and never deducts stock again',()=>{
+ const inv=setup();const order=inv.shop.reserve([{id:1,quantity:1}],0);inv.shop.attach(order.id,'cs_dispatch');
+ assert.throws(()=>inv.shop.dispatch(order.id,'postage-1'),/paid/);
+ inv.shop.complete({id:'cs_dispatch',payment_status:'paid',currency:'gbp',amount_total:199});
+ const before=inv.snapshot();inv.shop.dispatch(order.id,'postage-1');inv.shop.dispatch(order.id,'postage-2');
+ assert.deepEqual(inv.snapshot(),before);assert.equal(inv.shop.order(order.id).tracking_reference,'postage-1');
+ assert.ok(inv.shop.order(order.id).dispatched_at);assert.equal((inv.shop.orders()[0] as any).items.length,1);inv.close();
+});
+
+test('listing photos accept admin uploads and reject local paths or executable files', () => {
+  const inv = setup();
+  const listing = { cardId: 1, quantity: 3, price: 199, stockConfirmed: true };
+  inv.shop.publish({ ...listing, photo: '/storage/cards/synthetic-card_1.webp' });
+  assert.equal(inv.shop.products()[0].photo, '/storage/cards/synthetic-card_1.webp');
+  for (const photo of ['/storage/cards/../secret.jpg', '/storage/cards/test.php', 'http://example.test/card.jpg', 'file:///etc/passwd']) {
+    assert.throws(() => inv.shop.publish({ ...listing, photo }), /Photo/);
+  }
+  inv.close();
+});

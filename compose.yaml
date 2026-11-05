@@ -7,6 +7,10 @@ services:
       - cards-data:/app/data
     restart: unless-stopped
     environment:
+      LARAVEL_APP_KEY: ${LARAVEL_APP_KEY:-}
+      ADMIN_SERVICE_KEY: ${ADMIN_SERVICE_KEY:-}
+      LARAVEL_ADMIN_EMAIL: ${LARAVEL_ADMIN_EMAIL:-admin@togacards.co.uk}
+      APP_URL: ${SHOP_URL:-http://127.0.0.1:3000}
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SHOP_URL: ${SHOP_URL:-}
