@@ -58,10 +58,11 @@ class Inventory extends RecordsPage
     {
         return [
             TextColumn::make('number')->label('#')->sortable(),
-            TextColumn::make('player')->sortable(),
+            TextColumn::make('player')->sortable()->wrap()
+                ->description(fn (array $record): string => $record['variant'].' · '.$record['condition']),
             TextColumn::make('club')->sortable()->toggleable(isToggledHiddenByDefault: true),
-            TextColumn::make('variant'),
-            TextColumn::make('condition'),
+            TextColumn::make('variant')->toggleable(isToggledHiddenByDefault: true),
+            TextColumn::make('condition')->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('stock')->label('Owned')->numeric()->sortable(),
             TextColumn::make('price')->label('Shop price')->money('GBP', divideBy: 100)->placeholder('Set price'),
             TextColumn::make('available')->label('Shop available')->numeric()->sortable(),
