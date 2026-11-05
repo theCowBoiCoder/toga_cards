@@ -22,6 +22,8 @@ jobs:
           docker build --target build -t toga-cards-tests .
           docker run --rm --network none toga-cards-tests npm test
           docker run --rm --network none toga-cards-tests node --test cloudflare/ebay-notifications/worker.test.mjs
+          docker build --target admin-test -t toga-admin-tests .
+          docker run --rm --network none toga-admin-tests php vendor/bin/phpunit
           python3 -m unittest discover -s deploy/tests -v
           bash -n deploy/bootstrap.sh
           bash -n deploy/enable-https.sh
@@ -31,6 +33,7 @@ jobs:
           REVISION: ${{ github.sha }}
         run: |
           docker build --build-arg APP_REVISION="$REVISION" -t "toga-cards:$REVISION" .
+          python3 tests/docker-smoke.py "toga-cards:$REVISION"
           docker run --rm --network none --mount "type=bind,source=$PWD/tests,target=/app/tests,readonly" -e TOGA_SMOKE_MODULE_ROOT=/app/.output/server/package.json "toga-cards:$REVISION" node tests/http-smoke.mjs
           mkdir -p release
           docker save "toga-cards:$REVISION" | gzip > release/image.tar.gz

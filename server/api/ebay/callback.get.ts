@@ -10,8 +10,8 @@ export default defineEventHandler(async (event) => {
   const state = String(query.state || ""),
     cookie = getCookie(event, "ebay_oauth_state");
   const valid =
-    state.length === 64 &&
-    saved.state?.length === 64 &&
+    /^[a-f0-9]{64}$/.test(state) &&
+    typeof saved.state === "string" && /^[a-f0-9]{64}$/.test(saved.state) &&
     timingSafeEqual(Buffer.from(state), Buffer.from(saved.state)) &&
     cookie === state &&
     saved.expires > Date.now();

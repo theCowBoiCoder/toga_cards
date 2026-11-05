@@ -10,8 +10,8 @@ services:
         format: raw
     environment:
       NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: "3000"
+      HOST: 127.0.0.1
+      PORT: "3001"
       DATA_DIR: /app/data
     volumes:
       - inventory:/app/data

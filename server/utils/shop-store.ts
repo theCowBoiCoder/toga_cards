@@ -16,6 +16,14 @@ export function createShopStore(
   db.exec(`CREATE TABLE IF NOT EXISTS shop_listings (card_id INTEGER PRIMARY KEY REFERENCES cards(id), price INTEGER NOT NULL, quantity INTEGER NOT NULL, photo TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS shop_orders (id TEXT PRIMARY KEY, status TEXT NOT NULL, session_id TEXT UNIQUE, total INTEGER NOT NULL, shipping INTEGER NOT NULL, created TEXT NOT NULL, email TEXT, address TEXT);
     CREATE TABLE IF NOT EXISTS shop_order_items (order_id TEXT NOT NULL REFERENCES shop_orders(id), card_id INTEGER NOT NULL REFERENCES cards(id), quantity INTEGER NOT NULL, price INTEGER NOT NULL, PRIMARY KEY(order_id,card_id));`);
+  const orderColumns = new Set(
+    (db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[])
+      .map((column) => column.name),
+  );
+  if (!orderColumns.has("dispatched_at"))
+    db.exec("ALTER TABLE shop_orders ADD COLUMN dispatched_at TEXT");
+  if (!orderColumns.has("tracking_reference"))
+    db.exec("ALTER TABLE shop_orders ADD COLUMN tracking_reference TEXT NOT NULL DEFAULT ''");
   const int = (n: unknown, min = 0) => {
     if (!Number.isSafeInteger(n) || Number(n) < min || Number(n) > 1000000)
       throw new Error("Invalid quantity or price.");
@@ -82,8 +90,13 @@ export function createShopStore(
         "Assess condition and confirm physically separate website stock first.",
       );
     const photo = String(body.photo || "");
-    if (photo && (!/^https:\/\//.test(photo) || photo.length > 2000))
-      throw new Error("Photo must be an HTTPS URL.");
+    if (
+      photo && (
+        (!/^https:\/\//.test(photo) && !/^\/storage\/cards\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/i.test(photo)) ||
+        photo.length > 2000
+      )
+    )
+      throw new Error("Photo must be an HTTPS URL or an uploaded card image.");
     const active = db
       .prepare(
         "SELECT l.payload,m.card_id FROM ebay_listings l LEFT JOIN ebay_mappings m ON m.key=l.key WHERE l.active=1",
@@ -228,9 +241,24 @@ export function createShopStore(
   const order = (id: string) =>
     db.prepare("SELECT * FROM shop_orders WHERE id=?").get(id) as any;
   const orders = () =>
-    db
-      .prepare("SELECT * FROM shop_orders ORDER BY created DESC LIMIT 100")
-      .all();
+    (db.prepare("SELECT * FROM shop_orders ORDER BY created DESC LIMIT 100").all() as any[])
+      .map((order) => ({
+        ...order,
+        items: db.prepare(
+          "SELECT i.card_id,i.quantity,i.price,c.player,c.number,c.variant FROM shop_order_items i JOIN cards c ON c.id=i.card_id WHERE i.order_id=?",
+        ).all(order.id),
+      }));
+  const dispatch = db.transaction((id: string, tracking: unknown) => {
+    const current = order(id);
+    if (!current || current.status !== "paid")
+      throw new Error("Only a paid order can be marked dispatched.");
+    const reference = typeof tracking === "string" ? tracking.trim() : "";
+    if (!reference || reference.length > 150)
+      throw new Error("Enter a tracking or postage reference (maximum 150 characters).");
+    if (!current.dispatched_at)
+      db.prepare("UPDATE shop_orders SET dispatched_at=?,tracking_reference=? WHERE id=?")
+        .run(new Date().toISOString(), reference, id);
+  });
   return {
     committed,
     products,
@@ -241,6 +269,7 @@ export function createShopStore(
     complete,
     expire,
     orders,
+    dispatch,
     listings,
     order,
   };

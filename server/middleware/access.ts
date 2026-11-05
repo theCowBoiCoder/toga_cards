@@ -1,3 +1,4 @@
+import { validAdminServiceKey } from "../utils/admin-service";
 import { createHash, timingSafeEqual } from "node:crypto";
 export default defineEventHandler((event) => {
   let path: string;
@@ -21,6 +22,18 @@ export default defineEventHandler((event) => {
   if (!admin) return;
   setHeader(event, "Cache-Control", "no-store");
   setHeader(event, "X-Robots-Tag", "noindex, nofollow");
+  // OAuth completion is public, but the handler requires the matching HttpOnly
+  // state cookie and a single-use, unexpired server-side challenge.
+  if (path === "/api/ebay/callback" && event.method === "GET") return;
+  if (
+    path.startsWith("/api/") &&
+    validAdminServiceKey(getHeader(event, "x-toga-admin-key"))
+  ) return;
+  if (process.env.LARAVEL_ADMIN_ENABLED === "true")
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Use the Laravel admin to access private inventory operations.",
+    });
   const password = process.env.ADMIN_PASSWORD;
   const local =
     (["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(

@@ -1,6 +1,6 @@
 # Toga Cards storefront prototype
 
-The existing Nuxt application now serves `/` (homepage), `/shop` (catalogue and basket) and `/admin` (existing inventory/eBay tools plus website listings and orders). Nothing has been deployed or applied to live eBay listings by this change.
+The existing Nuxt application now serves `/` (homepage), `/shop` (catalogue and basket) and `/admin` (Laravel/Filament inventory, sales, eBay tools, website listings, orders, dispatch, staff and audit history). Nothing has been deployed or applied to live eBay listings by this change.
 
 ## Preview and development
 
@@ -14,7 +14,7 @@ $env:TOGA_PREVIEW = "1"
 node node_modules/nuxt/bin/nuxt.mjs dev --port 3100 --host 127.0.0.1
 ```
 
-This uses a separate database, labels stock as demonstration data, disables checkout and suppresses background eBay polling. The catalogue metadata is genuine; illustrations and demonstration prices are placeholders. Real product photos can be added as HTTPS image URLs in admin.
+This uses a separate database, labels stock as demonstration data, disables checkout and suppresses background eBay polling. The catalogue metadata is genuine; illustrations and demonstration prices are placeholders. In the complete Docker app, add real product photos as JPEG/PNG/WebP uploads or hosted HTTPS URLs in Laravel admin.
 
 ## Stripe setup
 
@@ -48,10 +48,10 @@ When reducing a GTC listing to zero, the worker enables and verifies eBay's acco
 
 ## Hosting and remaining launch work
 
-Use a Node server/container with a persistent `DATA_DIR`, HTTPS and database backups. This SQLite application cannot be uploaded unchanged to a Cloudflare Worker/Sites runtime. Preserve the existing Docker volume when upgrading; back it up first. The schema additions are additive. Do not expose the local app unchanged or delete the Docker volume.
+Use the supplied Docker image (Nginx, PHP-FPM and Node) with a persistent `/app/data` volume, HTTPS and backups of the volume plus runtime encryption keys. This SQLite application cannot be uploaded unchanged to a Cloudflare Worker/Sites runtime. Preserve the existing Docker volume when upgrading; back it up first. The schema additions are additive. Do not expose the local app unchanged or delete the Docker volume.
 
-Set a strong `ADMIN_PASSWORD` and optional `ADMIN_USER` before hosting; admin routes and inventory/eBay/export APIs are protected with HTTP Basic authentication. Use HTTPS. Without credentials, only direct loopback/local development access is permitted. Admin responses are no-store and noindex. POSTs require same-origin requests. Rate limiting and bot controls should also be configured at the public reverse proxy before accepting public checkouts.
+Run `python scripts/configure-admin.py` before starting Docker. The first administrator uses `LARAVEL_ADMIN_EMAIL` (default `admin@togacards.co.uk`) and `ADMIN_PASSWORD`. Existing accounts/passwords are preserved on restart. Use your profile to change the password and enable authenticator MFA. Laravel stores users, sessions and audit entries in a separate `admin.sqlite`; the existing stock ledger stays in `cards.sqlite`. The gateway blocks public access to private stock APIs. Laravel actions require authenticated administrator access and CSRF validation; a server-only key connects Laravel to the loopback Node service. Preserve `LARAVEL_APP_KEY` with backups. Use HTTPS and the supplied public Nginx rate limits.
 
 Before launch: provide real stock, prices and photos; complete Stripe test acceptance; configure the domain/hosting/backups; supply actual contact, delivery, returns and privacy information; verify order dispatch and confirmation emails. This prototype records customer email and shipping details for admin review. Refunds and postage/payment-fee reconciliation are manual; inventory profit figures for website sales currently exclude those costs and are not a complete net-profit calculation. There are no automated dispatch emails, refunds, label purchasing or buyer accounts yet.
 
-Validation passed: 38 offline tests (`npm test`), production build (`npm run build`), and production HTTP smoke (`npm run test:http`) covering admin authentication including encoded/trailing-slash paths, SSR, cross-origin rejection, webhook signature rejection, synthetic signed fulfilment, duplicate delivery and expiry release. Stripe test checkout requires configured credentials. Live stock updates require a connected seller account and verified inventory mappings.
+Validation includes Laravel login/access/MFA/audit and stock-action feature tests, combined Docker gateway/asset/CSRF checks, 41 offline inventory/payment/sync tests (`npm test`), production build (`npm run build`), and production HTTP smoke (`npm run test:http`) covering admin authentication including encoded/trailing-slash paths, SSR, cross-origin rejection, webhook signature rejection, synthetic signed fulfilment, duplicate delivery and expiry release. Stripe test checkout requires configured credentials. Live stock updates require a connected seller account and verified inventory mappings.
