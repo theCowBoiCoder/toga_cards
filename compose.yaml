@@ -1,0 +1,23 @@
+services:
+  cards:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - cards-data:/app/data
+    restart: unless-stopped
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SHOP_URL: ${SHOP_URL:-}
+      SHOP_SHIPPING_PENCE: ${SHOP_SHIPPING_PENCE:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      EBAY_CLIENT_ID: ${EBAY_CLIENT_ID:-}
+      EBAY_CLIENT_SECRET: ${EBAY_CLIENT_SECRET:-}
+      EBAY_REDIRECT_URI: ${EBAY_REDIRECT_URI:-}
+      EBAY_TOKEN_KEY: ${EBAY_TOKEN_KEY:-}
+      EBAY_RELAY_URL: ${EBAY_RELAY_URL:-}
+      EBAY_RELAY_SECRET: ${EBAY_RELAY_SECRET:-}
+volumes:
+  cards-data:

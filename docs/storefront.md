@@ -1,0 +1,57 @@
+# Toga Cards storefront prototype
+
+The existing Nuxt application now serves `/` (homepage), `/shop` (catalogue and basket) and `/admin` (existing inventory/eBay tools plus website listings and orders). Nothing has been deployed or applied to live eBay listings by this change.
+
+## Preview and development
+
+Use Node 22.22.3+ (24 LTS also supported). `npm run dev` serves the app on localhost. Use the Docker workflow on machines with an older Node runtime.
+
+Run `npm run dev:shop` to reopen the isolated demo at http://127.0.0.1:3100/. Equivalent Windows PowerShell configuration:
+
+```powershell
+$env:DATA_DIR = "$PWD/.preview-data"
+$env:TOGA_PREVIEW = "1"
+node node_modules/nuxt/bin/nuxt.mjs dev --port 3100 --host 127.0.0.1
+```
+
+This uses a separate database, labels stock as demonstration data, disables checkout and suppresses background eBay polling. The catalogue metadata is genuine; illustrations and demonstration prices are placeholders. Real product photos can be added as HTTPS image URLs in admin.
+
+## Stripe setup
+
+Copy the empty variables from `.env.example` into the local `.env`; keep keys out of Git and chat. Start with Stripe **test** credentials. Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SHOP_URL` (exact trusted origin) and `SHOP_SHIPPING_PENCE` (actual UK postage, integer pence; explicitly use `0` for free postage). Restart after configuration changes. Unset `TOGA_PREVIEW` for test payments against a dedicated test database.
+
+Forward Stripe test events with:
+
+```text
+stripe listen --forward-to localhost:3000/api/shop/webhook
+```
+
+Use the CLI's signing secret for the local webhook. Configure the deployed endpoint separately with its own signing secret. Subscribe to `checkout.session.completed` and `checkout.session.expired`. Only GBP card payments and UK delivery are enabled. Checkout prices and stock come from the server, never the basket. Payment completion requires a valid webhook signature and matching paid total, currency and session. Returning to the success page alone cannot record a sale.
+
+Orders reserve website stock transactionally before Stripe session creation. Sessions expire after 30 minutes; verified expiry events release reservations. Fulfilment is transactional and replay-safe. If a webhook is missed, use **Check Stripe** on a pending order to reconcile its actual status. Network failures during session creation retain reservations rather than assuming Stripe did not create a session. An order with no linked session needs manual lookup in Stripe by the UUID shown in admin (also the Stripe client reference, metadata orderId and idempotency key). Do not manually release a potentially payable session.
+
+Test successful payment, duplicate webhook, expiry, mismatched payment, competing baskets and failed session creation before launch. Offline tests cover inventory/fulfilment behavior; a real Stripe test checkout has not been performed without credentials.
+
+## Stock model and eBay
+
+Physical stock remains the existing inventory ledger. `shop_listings.quantity` is the allocation reserved for website customers, including pending checkout holds. Website availability is allocation minus holds, capped by physical stock. Payment deducts both physical stock and the allocation. Manual sales and eBay order import cannot consume allocated website copies; conflicts go to review. A physical stock adjustment cannot reduce stock below the allocation.
+
+Before publishing: count the copies, assess condition, set a price and requested allocation, and confirm the physical stock. Finish eBay stocktake, resolve order/sync errors and map every active listing. With automatic sync enabled, allocations are staged until the worker reduces and verifies eBay availability. Without automatic sync, the original manual publication check still rejects combined eBay listed quantity and website allocation above physical stock. A direct external eBay edit can still cause conflict; the application cannot promise atomic transactions across independent marketplaces.
+
+Automatic stock sync is now available from the admin shop panel. It polls eBay every two minutes and also wakes after local stock/listing changes or Stripe payments. It reduces live eBay quantities for mapped single-card fixed-price listings and verifies the result with GetItem. A requested website allocation stays pending until its eBay exposure is reduced and orders are checked again. The website and eBay never deliberately share the same allocated copy.
+
+The worker keeps durable jobs, retry delays, sold-counter watermarks and a renewable SQLite lease. Unknown write outcomes are checked against eBay before retrying. A sale during a transfer quarantines eBay availability at zero and prevents website release until that sale is accounted for. Failed or stale checks pause website purchasing. The admin panel shows errors, mapping counts, per-card progress and a pause control.
+
+Automatic updates are **reduction-only**. Lower live quantities are not replenished from an unexplained ledger difference, which could be an order still arriving from eBay. New receipts/stock returned from the website remain unlisted on eBay until physically counted and explicitly restocked through a reviewed flow. Multiple mapped eBay listings share one capped stock pool; available units are distributed in stable listing-key order and only reduced. Variation listings remain quarantined for SKU allocation review. All active listings must be matched before website stock can be released; do not guess matches for other collections, numbered parallels or bundles. Existing paid/unpaid/refunded order issues also require review. No stock is invented from listing quantities.
+
+When reducing a GTC listing to zero, the worker enables and verifies eBay's account-wide out-of-stock control if needed. This keeps zero-stock listings available for future restocking rather than deliberately ending them. Sync changes quantity only, never prices, titles or postage policies. External eBay edits, stale physical counts and API visibility delays cannot be made atomic with this database: keep confirmed channel allocations and monitor the review queue. Unmatched or unreviewed stock is not covered by automatic synchronisation.
+
+## Hosting and remaining launch work
+
+Use a Node server/container with a persistent `DATA_DIR`, HTTPS and database backups. This SQLite application cannot be uploaded unchanged to a Cloudflare Worker/Sites runtime. Preserve the existing Docker volume when upgrading; back it up first. The schema additions are additive. Do not expose the local app unchanged or delete the Docker volume.
+
+Set a strong `ADMIN_PASSWORD` and optional `ADMIN_USER` before hosting; admin routes and inventory/eBay/export APIs are protected with HTTP Basic authentication. Use HTTPS. Without credentials, only direct loopback/local development access is permitted. Admin responses are no-store and noindex. POSTs require same-origin requests. Rate limiting and bot controls should also be configured at the public reverse proxy before accepting public checkouts.
+
+Before launch: provide real stock, prices and photos; complete Stripe test acceptance; configure the domain/hosting/backups; supply actual contact, delivery, returns and privacy information; verify order dispatch and confirmation emails. This prototype records customer email and shipping details for admin review. Refunds and postage/payment-fee reconciliation are manual; inventory profit figures for website sales currently exclude those costs and are not a complete net-profit calculation. There are no automated dispatch emails, refunds, label purchasing or buyer accounts yet.
+
+Validation passed: 38 offline tests (`npm test`), production build (`npm run build`), and production HTTP smoke (`npm run test:http`) covering admin authentication including encoded/trailing-slash paths, SSR, cross-origin rejection, webhook signature rejection, synthetic signed fulfilment, duplicate delivery and expiry release. Stripe test checkout requires configured credentials. Live stock updates require a connected seller account and verified inventory mappings.

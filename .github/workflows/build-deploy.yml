@@ -1,0 +1,75 @@
+name: Build, test and deploy
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: toga-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test source and deployment tools
+        run: |
+          docker build --target build -t toga-cards-tests .
+          docker run --rm --network none toga-cards-tests npm test
+          docker run --rm --network none toga-cards-tests node --test cloudflare/ebay-notifications/worker.test.mjs
+          python3 -m unittest discover -s deploy/tests -v
+          bash -n deploy/bootstrap.sh
+          bash -n deploy/enable-https.sh
+          sh -n deploy/receive.sh
+      - name: Build immutable production release
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          docker build --build-arg APP_REVISION="$REVISION" -t "toga-cards:$REVISION" .
+          docker run --rm --network none --mount "type=bind,source=$PWD/tests,target=/app/tests,readonly" -e TOGA_SMOKE_MODULE_ROOT=/app/.output/server/package.json "toga-cards:$REVISION" node tests/http-smoke.mjs
+          mkdir -p release
+          docker save "toga-cards:$REVISION" | gzip > release/image.tar.gz
+          python3 deploy/make-release.py "$REVISION" release
+          tar -C release -cf release.tar image.tar.gz release.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: toga-release-${{ github.sha }}
+          path: release.tar
+          retention-days: 7
+          compression-level: 0
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: toga-release-${{ github.sha }}
+      - name: Send verified release to restricted SSH receiver
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          SSH_HOST: ${{ vars.DEPLOY_HOST }}
+          SSH_USER: ${{ vars.DEPLOY_USER }}
+          SSH_PORT: ${{ vars.DEPLOY_PORT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "${SSH_PORT:-22}" =~ ^[0-9]+$ ]]
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          key_file=$(mktemp)
+          hosts_file=$(mktemp)
+          trap 'rm -f "$key_file" "$hosts_file"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key_file"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts_file"
+          ssh -T -i "$key_file" -p "${SSH_PORT:-22}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts_file" "$SSH_USER@$SSH_HOST" < release.tar

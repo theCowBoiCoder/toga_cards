@@ -1,0 +1,247 @@
+import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
+
+export function createShopStore(
+  db: Database.Database,
+  cards: () => any[],
+  sell: (body: any) => unknown,
+  sync?: {
+    enabled: () => boolean;
+    assertIdle: () => void;
+    request: (id: number, quantity: number) => void;
+    usable: (id: number) => boolean;
+    sold: (id: number, quantity: number) => void;
+  },
+) {
+  db.exec(`CREATE TABLE IF NOT EXISTS shop_listings (card_id INTEGER PRIMARY KEY REFERENCES cards(id), price INTEGER NOT NULL, quantity INTEGER NOT NULL, photo TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS shop_orders (id TEXT PRIMARY KEY, status TEXT NOT NULL, session_id TEXT UNIQUE, total INTEGER NOT NULL, shipping INTEGER NOT NULL, created TEXT NOT NULL, email TEXT, address TEXT);
+    CREATE TABLE IF NOT EXISTS shop_order_items (order_id TEXT NOT NULL REFERENCES shop_orders(id), card_id INTEGER NOT NULL REFERENCES cards(id), quantity INTEGER NOT NULL, price INTEGER NOT NULL, PRIMARY KEY(order_id,card_id));`);
+  const int = (n: unknown, min = 0) => {
+    if (!Number.isSafeInteger(n) || Number(n) < min || Number(n) > 1000000)
+      throw new Error("Invalid quantity or price.");
+    return Number(n);
+  };
+  const committed = (id: number) =>
+    (
+      db
+        .prepare("SELECT quantity FROM shop_listings WHERE card_id=?")
+        .get(id) as any
+    )?.quantity || 0;
+  const held = (id: number) =>
+    (
+      db
+        .prepare(
+          "SELECT COALESCE(SUM(i.quantity),0) n FROM shop_order_items i JOIN shop_orders o ON o.id=i.order_id WHERE i.card_id=? AND o.status='pending'",
+        )
+        .get(id) as any
+    ).n;
+  function products() {
+    const listings = db.prepare("SELECT * FROM shop_listings").all() as any[];
+    return cards().map((c) => {
+      const l = listings.find((l) => l.card_id === c.id);
+      return {
+        id: c.id,
+        player: c.player,
+        club: c.club,
+        number: c.number,
+        variant: c.variant,
+        season: c.season,
+        collection: c.collection,
+        condition: c.condition,
+        price: l?.price || null,
+        photo: l?.photo || "",
+        available:
+          l && (!sync || sync.usable(c.id))
+            ? Math.max(0, Math.min(l.quantity, c.stock) - held(c.id))
+            : 0,
+      };
+    });
+  }
+  const publish = db.transaction((body: any) => {
+    sync?.assertIdle();
+    const id = int(body.cardId, 1),
+      quantity = int(body.quantity),
+      price = int(body.price, 50);
+    const card = cards().find((c) => c.id === id);
+    if (!card || quantity > card.stock || quantity < held(id))
+      throw new Error("Allocation must fit physical stock and pending orders.");
+    const condition = body.condition || card.condition;
+    if (
+      ![
+        "Not assessed",
+        "Near mint",
+        "Excellent",
+        "Very good",
+        "Good",
+        "Poor",
+      ].includes(condition)
+    )
+      throw new Error("Choose a valid condition.");
+    if (quantity > 0 && (condition === "Not assessed" || !body.stockConfirmed))
+      throw new Error(
+        "Assess condition and confirm physically separate website stock first.",
+      );
+    const photo = String(body.photo || "");
+    if (photo && (!/^https:\/\//.test(photo) || photo.length > 2000))
+      throw new Error("Photo must be an HTTPS URL.");
+    const active = db
+      .prepare(
+        "SELECT l.payload,m.card_id FROM ebay_listings l LEFT JOIN ebay_mappings m ON m.key=l.key WHERE l.active=1",
+      )
+      .all() as any[];
+    const setting = (key: string) =>
+      (
+        db
+          .prepare("SELECT value FROM ebay_settings WHERE key=?")
+          .get(key) as any
+      )?.value;
+    if (
+      !sync?.enabled() &&
+      quantity &&
+      (active.length || setting("tokens")) &&
+      (!setting("autoSince") ||
+        !setting("lastSync") ||
+        Date.now() - Date.parse(setting("lastSync")) > 120000 ||
+        setting("lastError") ||
+        setting("notificationError"))
+    )
+      throw new Error(
+        "Finish eBay stocktake and run a successful sync within two minutes before allocating stock.",
+      );
+    if (!sync?.enabled() && quantity && active.some((l) => !l.card_id))
+      throw new Error(
+        "Map all active eBay listings before allocating website stock.",
+      );
+    const listed = active
+      .filter((l) => l.card_id === id)
+      .reduce((n, l) => n + Number(JSON.parse(l.payload).available || 0), 0);
+    if (!sync?.enabled() && quantity && listed + quantity > card.stock)
+      throw new Error(
+        "Reduce eBay listed quantity first; these copies are already offered on eBay.",
+      );
+    db.prepare("UPDATE cards SET condition=? WHERE id=?").run(condition, id);
+    db.prepare(
+      "INSERT INTO shop_listings VALUES (?,?,?,?) ON CONFLICT(card_id) DO UPDATE SET price=excluded.price,quantity=excluded.quantity,photo=excluded.photo",
+    ).run(
+      id,
+      price,
+      sync?.enabled() ? Math.min(committed(id), quantity) : quantity,
+      photo,
+    );
+    if (sync?.enabled()) sync.request(id, quantity);
+  });
+  const reserve = db.transaction((items: any, shipping: number) => {
+    sync?.assertIdle();
+    if (!Array.isArray(items) || !items.length || items.length > 50)
+      throw new Error("Choose between 1 and 50 different cards.");
+    const unique = new Set<number>(),
+      available = products();
+    const lines = items.map((item) => {
+      const id = int(item.id, 1),
+        quantity = int(item.quantity, 1);
+      if (unique.has(id)) throw new Error("Duplicate basket item.");
+      unique.add(id);
+      const product = available.find((c) => c.id === id);
+      if (!product?.price || quantity > product.available)
+        throw new Error("A card is no longer available in that quantity.");
+      return { ...product, quantity };
+    });
+    const id = randomUUID(),
+      total = lines.reduce((n, l) => n + l.price * l.quantity, int(shipping));
+    db.prepare(
+      "INSERT INTO shop_orders(id,status,total,shipping,created) VALUES (?,'pending',?,?,?)",
+    ).run(id, total, shipping, new Date().toISOString());
+    for (const l of lines)
+      db.prepare("INSERT INTO shop_order_items VALUES (?,?,?,?)").run(
+        id,
+        l.id,
+        l.quantity,
+        l.price,
+      );
+    return { id, total, lines };
+  });
+  const attach = (id: string, session: string) =>
+    db
+      .prepare(
+        "UPDATE shop_orders SET session_id=? WHERE id=? AND status='pending'",
+      )
+      .run(session, id);
+  const release = (id: string) =>
+    db
+      .prepare(
+        "UPDATE shop_orders SET status='expired' WHERE id=? AND status='pending'",
+      )
+      .run(id);
+  const complete = db.transaction((session: any) => {
+    sync?.assertIdle();
+    const order = db
+      .prepare("SELECT * FROM shop_orders WHERE session_id=?")
+      .get(session.id) as any;
+    if (!order) throw new Error("Order not found.");
+    if (order.status === "paid") return;
+    if (
+      order.status !== "pending" ||
+      session.payment_status !== "paid" ||
+      session.currency !== "gbp" ||
+      session.amount_total !== order.total
+    )
+      throw new Error("Payment does not match order.");
+    const lines = db
+      .prepare("SELECT * FROM shop_order_items WHERE order_id=?")
+      .all(order.id) as any[];
+    for (const l of lines) {
+      if (committed(l.card_id) < l.quantity)
+        throw new Error("Allocation needs review.");
+      sell({
+        action: "sale",
+        cardId: l.card_id,
+        quantity: l.quantity,
+        unitPrice: l.price,
+        fees: 0,
+        date: new Date().toISOString().slice(0, 10),
+        platform: "Website",
+      });
+      db.prepare(
+        "UPDATE shop_listings SET quantity=quantity-? WHERE card_id=?",
+      ).run(l.quantity, l.card_id);
+      sync?.sold(l.card_id, l.quantity);
+    }
+    db.prepare(
+      "UPDATE shop_orders SET status='paid',email=?,address=? WHERE id=?",
+    ).run(
+      session.customer_details?.email || "",
+      JSON.stringify(
+        session.collected_information?.shipping_details ||
+          session.shipping_details ||
+          {},
+      ),
+      order.id,
+    );
+  });
+  const expire = (session: string) =>
+    db
+      .prepare(
+        "UPDATE shop_orders SET status='expired' WHERE session_id=? AND status='pending'",
+      )
+      .run(session);
+  const listings = () => db.prepare("SELECT * FROM shop_listings").all();
+  const order = (id: string) =>
+    db.prepare("SELECT * FROM shop_orders WHERE id=?").get(id) as any;
+  const orders = () =>
+    db
+      .prepare("SELECT * FROM shop_orders ORDER BY created DESC LIMIT 100")
+      .all();
+  return {
+    committed,
+    products,
+    publish,
+    reserve,
+    attach,
+    release,
+    complete,
+    expire,
+    orders,
+    listings,
+    order,
+  };
+}
