@@ -4,6 +4,8 @@ A Nuxt 4 storefront with a Laravel 13 / Filament 5 administration panel, Stripe 
 
 See [storefront setup and limitations](docs/storefront.md) for Stripe and stock allocations. The Laravel admin lives at `/admin`: inventory and receipts, offline sales, website prices/photos/allocations, paid-order dispatch, eBay listing matching and order review, stock-sync controls, administrator accounts and an activity log.
 
+Use **Cards & stock** to manage each card in one row: owned copies, shop price, available-to-buy copies and stock-check status. **Edit shop** controls its selling details; **Stock** contains receipts, physical counts and offline sales. The previous `/admin/website` URL redirects to this combined screen. Website availability still waits for verified channel allocations.
+
 ## Ubuntu and GitHub deployment
 
 See [Ubuntu/Nginx deployment and inventory cutover](docs/deployment.md). GitHub-hosted runners test and build the image; a restricted SSH account deploys it. Production deployment stays disabled until server setup and inventory migration are complete.

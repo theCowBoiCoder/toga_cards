@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\Inventory;
-use App\Filament\Pages\Website;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Services\InventoryClient;
@@ -27,6 +26,15 @@ class AdminAccessTest extends TestCase
         return ['cards' => [['id' => 1, 'player' => 'Test Player', 'club' => 'Arsenal', 'number' => '24', 'season' => '2026/27', 'collection' => 'Topps', 'variant' => 'Base', 'condition' => 'Near mint', 'stock' => 4, 'stock_cost' => 200]], 'sales' => [], 'sets' => []];
     }
 
+    private function shopSnapshot(): array
+    {
+        return [
+            'products' => [[...$this->snapshot()['cards'][0], 'price' => null, 'photo' => '', 'available' => 0]],
+            'listings' => [], 'orders' => [],
+            'stockSync' => ['targets' => [], 'jobs' => [], 'enabled' => true, 'paused' => false],
+        ];
+    }
+
     public function test_guests_are_sent_to_login_and_cannot_register_or_export(): void
     {
         Http::preventStrayRequests();
@@ -34,6 +42,7 @@ class AdminAccessTest extends TestCase
         $this->get('/admin/login')->assertOk()->assertSee('Toga Cards');
         $this->get('/admin/register')->assertNotFound();
         $this->get('/admin/export/inventory')->assertRedirect('/admin/login');
+        $this->get('/admin/website')->assertRedirect('/admin/login');
         Http::assertNothingSent();
     }
 
@@ -43,6 +52,7 @@ class AdminAccessTest extends TestCase
         $this->actingAs(User::factory()->create(['is_admin' => false]));
         $this->get('/admin/inventory')->assertForbidden();
         $this->get('/admin/export/inventory')->assertForbidden();
+        $this->get('/admin/website')->assertForbidden();
         Http::assertNothingSent();
     }
 
@@ -51,7 +61,10 @@ class AdminAccessTest extends TestCase
         $this->actingAs(User::factory()->create(['is_admin' => true]));
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         Http::preventStrayRequests();
-        Http::fake(['http://127.0.0.1:3001/api/inventory' => Http::response($this->snapshot())]);
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => Http::response($this->snapshot()),
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($this->shopSnapshot()),
+        ]);
         Livewire::test(Inventory::class)->assertSee('Test Player')
             ->callTableAction('receive', '1', data: ['quantity' => 2, 'unitCost' => 1.25, 'date' => '2026-11-05'])
             ->assertHasNoTableActionErrors();
@@ -138,7 +151,10 @@ class AdminAccessTest extends TestCase
         $snapshot = $this->snapshot();
         $snapshot['cards'][0]['player'] = '<script>alert("x")</script>';
         Http::preventStrayRequests();
-        Http::fake(['http://127.0.0.1:3001/api/inventory' => Http::response($snapshot)]);
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => Http::response($snapshot),
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($this->shopSnapshot()),
+        ]);
         $html = Livewire::test(Inventory::class)->html();
         $this->assertStringContainsString('&lt;script&gt;', $html);
         $this->assertStringNotContainsString('<script>alert("x")</script>', $html);
@@ -165,7 +181,7 @@ class AdminAccessTest extends TestCase
             'http://127.0.0.1:3001/api/inventory' => Http::response($this->snapshot()),
             'http://127.0.0.1:3001/api/admin/shop' => Http::response(['stockSync' => ['targets' => [], 'enabled' => true], 'products' => [$product], 'listings' => [], 'orders' => []]),
         ]);
-        Livewire::test(Website::class)->callTableAction('listing', '1', data: ['price' => 1.99, 'quantity' => 2, 'condition' => 'Near mint', 'image' => null, 'photo_url' => 'https://example.test/card.jpg', 'stockConfirmed' => true])->assertHasNoTableActionErrors();
+        Livewire::test(Inventory::class)->callTableAction('listing', '1', data: ['price' => 1.99, 'quantity' => 2, 'condition' => 'Near mint', 'image' => null, 'photo_url' => 'https://example.test/card.jpg', 'stockConfirmed' => true])->assertHasNoTableActionErrors();
         Http::assertSent(fn ($request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/api/admin/shop') && $request['price'] === 199 && $request['quantity'] === 2 && $request['photo'] === 'https://example.test/card.jpg');
     }
 
@@ -181,7 +197,7 @@ class AdminAccessTest extends TestCase
             'http://127.0.0.1:3001/api/admin/shop' => Http::response(['stockSync' => ['targets' => []], 'products' => [$product], 'listings' => [], 'orders' => []]),
         ]);
         $image = UploadedFile::fake()->createWithContent('card.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1sAAAAASUVORK5CYII='));
-        Livewire::test(Website::class)->callTableAction('listing', '1', data: ['price' => 1.99, 'quantity' => 2, 'condition' => 'Near mint', 'image' => $image, 'photo_url' => '', 'stockConfirmed' => true])->assertHasNoTableActionErrors();
+        Livewire::test(Inventory::class)->callTableAction('listing', '1', data: ['price' => 1.99, 'quantity' => 2, 'condition' => 'Near mint', 'image' => $image, 'photo_url' => '', 'stockConfirmed' => true])->assertHasNoTableActionErrors();
         Http::assertSent(function ($request): bool {
             if ($request->method() !== 'POST') {
                 return false;
@@ -192,5 +208,56 @@ class AdminAccessTest extends TestCase
 
             return true;
         });
+    }
+
+    public function test_inventory_combines_owned_stock_and_pending_website_listing_without_publishing_it(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $shop = $this->shopSnapshot();
+        $shop['products'][0]['price'] = 199;
+        $shop['stockSync']['targets'] = [['card_id' => 1, 'quantity' => 2]];
+        $shop['stockSync']['jobs'] = [['card_id' => 1, 'error' => 'Match unmapped eBay listings before releasing stock.']];
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => Http::response($this->snapshot()),
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($shop),
+        ]);
+        Livewire::test(Inventory::class)
+            ->assertTableColumnStateSet('stock', 4, '1')
+            ->assertTableColumnStateSet('stock_cost', 200, '1')
+            ->assertTableColumnStateSet('price', 199, '1')
+            ->assertTableColumnStateSet('available', 0, '1')
+            ->assertTableColumnStateSet('website_status', 'Needs review', '1')
+            ->assertSee('Match unmapped eBay listings before releasing stock.')
+            ->assertTableActionExists('receive')->assertTableActionExists('listing');
+        Http::assertNotSent(fn ($request): bool => $request->method() === 'POST');
+        $this->assertDatabaseCount('audit_events', 0);
+    }
+
+    public function test_unified_shop_editor_rejects_more_copies_than_owned_without_sending_a_write(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Storage::fake('public');
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => Http::response($this->snapshot()),
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($this->shopSnapshot()),
+        ]);
+        Livewire::test(Inventory::class)->callTableAction('listing', '1', data: [
+            'price' => 1.99, 'quantity' => 5, 'condition' => 'Near mint',
+            'image' => null, 'photo_url' => '', 'stockConfirmed' => true,
+        ])->assertHasTableActionErrors(['quantity' => 'max']);
+        Http::assertNotSent(fn ($request): bool => $request->method() === 'POST');
+        $this->assertDatabaseCount('audit_events', 0);
+    }
+
+    public function test_old_website_listing_url_redirects_to_the_combined_inventory_page(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        Http::preventStrayRequests();
+        $this->get('/admin/website')->assertRedirect('/admin/inventory');
+        Http::assertNothingSent();
     }
 }
