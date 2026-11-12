@@ -64,7 +64,10 @@ try:
     with request("/admin/ebay/connect", data=b"") as response:
         assert response.status == 419, "Laravel CSRF protection did not reject the request"
     with request("/shop") as response:
-        assert response.status == 200 and "Toga Cards" in response.read().decode()
+        html = response.read().decode()
+        assert response.status == 200, "Shop did not return HTTP 200"
+        assert re.search(r"<title[^>]*>\s*Toga Cards\b", html, re.IGNORECASE), "Shop title is missing"
+        assert 'aria-label="Search catalogue"' in html, "Shop catalogue did not render"
     print("Combined Docker smoke passed: health, assets, login boundary, private API isolation, CSRF and storefront.")
 except Exception:
     subprocess.run(["docker", "logs", "--tail", "60", name], check=False)
