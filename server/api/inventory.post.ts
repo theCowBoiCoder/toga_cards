@@ -1,4 +1,3 @@
-import { runStockSync } from "../utils/stock-sync-service";
 import { getInventory } from "../utils/inventory";
 export default defineEventHandler(async (event) => {
   const origin = getHeader(event, "origin");
@@ -15,7 +14,6 @@ export default defineEventHandler(async (event) => {
     });
   try {
     const result = getInventory().mutate(body);
-    if (getInventory().stockSync.enabled()) void runStockSync().catch(() => {});
     return result;
   } catch (error) {
     throw createError({

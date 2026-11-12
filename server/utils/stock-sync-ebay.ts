@@ -44,18 +44,17 @@ export function createEbayStockAdapter(
         tracking: String(item.InventoryTrackingMethod || "ItemID"),
       };
     },
-    reduceListing: async (
+    updateListing: async (
       itemId: string,
       quantity: number,
       live: LiveListing,
     ) => {
       if (
         !Number.isSafeInteger(quantity) ||
-        quantity < 0 ||
-        quantity > live.available
+        quantity < 0 || quantity > 1000000
       )
         throw new Error(
-          "eBay automatic stock updates may only reduce availability.",
+          "Enter a valid eBay stock quantity.",
         );
       if (quantity === 0) {
         if (live.duration !== "GTC")

@@ -7,12 +7,9 @@ export function createShopStore(
   cards: () => any[],
   sell: (body: any) => unknown,
   sync?: {
-    enabled: () => boolean;
     assertIdle: () => void;
     request: (id: number, quantity: number) => void;
-    usable: (id: number) => boolean;
     sold: (id: number, quantity: number) => void;
-    enqueue?: (id: number) => void;
   },
 ) {
   db.exec(`CREATE TABLE IF NOT EXISTS shop_listings (card_id INTEGER PRIMARY KEY REFERENCES cards(id), price INTEGER NOT NULL, quantity INTEGER NOT NULL, photo TEXT NOT NULL DEFAULT '');
@@ -31,7 +28,6 @@ export function createShopStore(
     );
   const support = createOrderSupport(db, (id) => {
     sync?.assertIdle();
-    sync?.enqueue?.(id);
   });
   const int = (n: unknown, min = 0) => {
     if (!Number.isSafeInteger(n) || Number(n) < min || Number(n) > 1000000)
@@ -67,10 +63,9 @@ export function createShopStore(
         condition: c.condition,
         price: l?.price || null,
         photo: l?.photo || "",
-        available:
-          l && (!sync || sync.usable(c.id))
-            ? Math.max(0, Math.min(l.quantity, c.stock) - held(c.id))
-            : 0,
+        available: l
+          ? Math.max(0, Math.min(l.quantity, c.stock) - held(c.id))
+          : 0,
       };
     });
   }
@@ -95,9 +90,7 @@ export function createShopStore(
     )
       throw new Error("Choose a valid condition.");
     if (quantity > 0 && (condition === "Not assessed" || !body.stockConfirmed))
-      throw new Error(
-        "Assess condition and confirm physically separate website stock first.",
-      );
+      throw new Error("Assess condition and confirm website stock first.");
     const photo = String(body.photo || "");
     if (
       photo &&
@@ -108,51 +101,11 @@ export function createShopStore(
         photo.length > 2000)
     )
       throw new Error("Photo must be an HTTPS URL or an uploaded card image.");
-    const active = db
-      .prepare(
-        "SELECT l.payload,m.card_id FROM ebay_listings l LEFT JOIN ebay_mappings m ON m.key=l.key WHERE l.active=1",
-      )
-      .all() as any[];
-    const setting = (key: string) =>
-      (
-        db
-          .prepare("SELECT value FROM ebay_settings WHERE key=?")
-          .get(key) as any
-      )?.value;
-    if (
-      !sync?.enabled() &&
-      quantity &&
-      (active.length || setting("tokens")) &&
-      (!setting("autoSince") ||
-        !setting("lastSync") ||
-        Date.now() - Date.parse(setting("lastSync")) > 120000 ||
-        setting("lastError") ||
-        setting("notificationError"))
-    )
-      throw new Error(
-        "Finish eBay stocktake and run a successful sync within two minutes before allocating stock.",
-      );
-    if (!sync?.enabled() && quantity && active.some((l) => !l.card_id))
-      throw new Error(
-        "Map all active eBay listings before allocating website stock.",
-      );
-    const listed = active
-      .filter((l) => l.card_id === id)
-      .reduce((n, l) => n + Number(JSON.parse(l.payload).available || 0), 0);
-    if (!sync?.enabled() && quantity && listed + quantity > card.stock)
-      throw new Error(
-        "Reduce eBay listed quantity first; these copies are already offered on eBay.",
-      );
     db.prepare("UPDATE cards SET condition=? WHERE id=?").run(condition, id);
     db.prepare(
       "INSERT INTO shop_listings VALUES (?,?,?,?) ON CONFLICT(card_id) DO UPDATE SET price=excluded.price,quantity=excluded.quantity,photo=excluded.photo",
-    ).run(
-      id,
-      price,
-      sync?.enabled() ? Math.min(committed(id), quantity) : quantity,
-      photo,
-    );
-    if (sync?.enabled()) sync.request(id, quantity);
+    ).run(id, price, quantity, photo);
+    sync?.request(id, quantity);
   });
   const reserve = db.transaction(
     (items: any, shipping: number, customerId?: number) => {

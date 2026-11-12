@@ -64,29 +64,24 @@ class Inventory extends RecordsPage
         $products = collect($shop['products'])->keyBy('id');
         $targets = collect($shop['stockSync']['targets'])->keyBy('card_id');
         $listings = collect($shop['listings'])->keyBy('card_id');
-        $jobs = collect($shop['stockSync']['jobs'] ?? [])->keyBy('card_id');
 
         return collect($this->client()->get('/api/inventory')['cards'])
-            ->map(function (array $card) use ($shop, $products, $targets, $listings, $jobs): array {
+            ->map(function (array $card) use ($products, $targets, $listings): array {
                 $product = $products[$card['id']] ?? [];
                 $allocated = $listings[$card['id']]['quantity'] ?? 0;
                 $requested = $targets[$card['id']]['quantity'] ?? $allocated;
                 $available = $product['available'] ?? 0;
                 $price = $product['price'] ?? null;
-                $issue = $requested > 0 ? ($jobs[$card['id']]['error'] ?? '') : '';
                 $status = match (true) {
                     $available > 0 => 'Available',
                     ! $price || $requested === 0 => 'Not listed',
                     $card['stock'] === 0 => 'Out of stock',
-                    (bool) ($shop['stockSync']['paused'] ?? false) => 'Paused',
-                    filled($issue) => 'Needs review',
-                    $requested > $allocated => 'Checking stock',
                     default => 'Unavailable',
                 };
 
                 return [...$card, 'price' => $price, 'photo' => $product['photo'] ?? '',
                     'requested' => $requested, 'allocated' => $allocated, 'available' => $available,
-                    'website_status' => $status, 'website_issue' => $issue];
+                    'website_status' => $status];
             })->all();
     }
 
@@ -109,7 +104,7 @@ class Inventory extends RecordsPage
                     'Checking stock', 'Unavailable' => 'warning',
                     default => 'gray',
                 })
-                ->description(fn (array $record): ?string => $record['website_issue'] ?: null)->wrap(),
+                ->wrap(),
             TextColumn::make('requested')->label('Requested for shop')->numeric()->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('allocated')->label('Reserved for shop')->numeric()->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('stock_cost')->label('Stock cost')->money('GBP', divideBy: 100)->toggleable(isToggledHiddenByDefault: true),
@@ -120,6 +115,10 @@ class Inventory extends RecordsPage
     {
         return [
             $this->shopAction(),
+            $this->adminAction('updateEbay')->label('Update eBay stock')->color('gray')
+                ->requiresConfirmation()
+                ->modalDescription(fn (array $record): string => 'Update only this card’s linked eBay listings from its current website availability ('.$record['available'].' copies). If several listings are linked, the first receives the stock and the others are set to zero. Prices stay unchanged. Future stock changes require another update.')
+                ->action(fn (array $record) => $this->perform('/api/admin/stock-sync', ['action' => 'sync', 'cardIds' => [$record['id']]], 'Selected eBay stock updated')),
             ActionGroup::make($this->stockActions())->label('Stock')->button()->color('gray'),
         ];
     }
@@ -141,7 +140,7 @@ class Inventory extends RecordsPage
                 $this->moneyInput('price', 'Selling price per card')->minValue(0.50),
                 TextInput::make('quantity')->label('Copies to sell on the website')->integer()->minValue(0)
                     ->maxValue(fn (array $record): int => $record['stock'])->required()
-                    ->helperText('Choose copies from your owned stock. Set 0 to stop offering this card. eBay stock checks run before copies become available to buy.'),
+                    ->helperText('Choose copies from your owned stock. Set 0 to stop offering this card. Confirmed copies become available immediately. Update eBay separately when you choose.'),
                 Select::make('condition')->options(array_combine(
                     ['Not assessed', 'Near mint', 'Excellent', 'Very good', 'Good', 'Poor'],
                     ['Not assessed', 'Near mint', 'Excellent', 'Very good', 'Good', 'Poor'],
@@ -158,7 +157,7 @@ class Inventory extends RecordsPage
                     'cardId' => $record['id'], 'price' => $this->pence($data['price']),
                     'quantity' => $data['quantity'], 'condition' => $data['condition'],
                     'photo' => $photo, 'stockConfirmed' => $data['stockConfirmed'],
-                ], 'Shop details saved; Shop available shows the verified quantity');
+                ], 'Shop details saved; website stock updated');
             });
     }
 

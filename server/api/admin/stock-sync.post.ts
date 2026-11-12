@@ -4,16 +4,10 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event),
     inv = getInventory();
   try {
-    if (body?.action === "pause") {
-      inv.stockSync.pause();
-      return inv.stockSync.status();
-    }
-    if (body?.action === "enable") inv.stockSync.enable();
-    else if (body?.action === "sync") inv.stockSync.retryNow();
-    else if (body?.action !== "sync")
-      throw new Error("Unknown stock synchronisation action.");
-    void runStockSync().catch(() => {});
-    return { queued: true, ...inv.stockSync.status() };
+    if (body?.action !== "sync" || !Array.isArray(body.cardIds) || !body.cardIds.length)
+      throw new Error("Select the cards whose eBay quantities you want to update.");
+    await runStockSync(body.cardIds);
+    return { updated: true, ...inv.stockSync.status() };
   } catch (e) {
     throw createError({
       statusCode: 409,

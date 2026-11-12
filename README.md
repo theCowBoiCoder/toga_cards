@@ -4,7 +4,7 @@ A Nuxt 4 storefront with a Laravel 13 / Filament 5 administration panel, Stripe 
 
 See [storefront setup and limitations](docs/storefront.md) for Stripe and stock allocations. The Laravel admin lives at `/admin`: inventory and receipts, offline sales, website prices/photos/allocations, paid-order dispatch, eBay listing matching and order review, stock-sync controls, administrator accounts and an activity log.
 
-Use **Cards & stock** to manage each card in one row: owned copies, shop price, available-to-buy copies and stock-check status. **Edit shop** controls its selling details; **Stock** contains receipts, physical counts and offline sales. The previous `/admin/website` URL redirects to this combined screen. Website availability still waits for verified channel allocations.
+Use **Cards & stock** to manage each card in one row: owned copies, shop price, available-to-buy copies and stock-check status. **Edit shop** controls its selling details; **Stock** contains receipts, physical counts and offline sales. The previous `/admin/website` URL redirects to this combined screen. Confirmed website stock is available immediately. Use **Update eBay stock** on a selected card to send its current website availability to eBay; outbound quantity updates never run automatically.
 
 ## Ubuntu and GitHub deployment
 

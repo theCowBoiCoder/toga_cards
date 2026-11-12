@@ -1,4 +1,3 @@
-import { runStockSync } from "../../utils/stock-sync-service";
 import { randomBytes } from "node:crypto";
 import { requireLocalRequest } from "../../utils/ebay-security";
 import { getInventory } from "../../utils/inventory";
@@ -77,10 +76,6 @@ export default defineEventHandler(async (event) => {
         break;
       default:
         throw new Error("Unknown eBay action.");
-    }
-    if (getInventory().stockSync.enabled()) {
-      getInventory().stockSync.enqueueAll();
-      void runStockSync().catch(() => {});
     }
     return connectionStatus();
   } catch (error) {

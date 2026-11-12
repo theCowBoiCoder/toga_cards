@@ -43,12 +43,9 @@ export function createInventory(path: string) {
       .all() as any[];
   }
   const shop = createShopStore(db, cards, (body) => mutate(body), {
-    enabled: () => stockSync.enabled(),
     assertIdle: () => stockSync.assertIdle(),
     request: (id, quantity) => stockSync.request(id, quantity),
-    usable: (id) => stockSync.usable(id),
     sold: (id, quantity) => stockSync.sold(id, quantity),
-    enqueue: (id) => stockSync.enqueue(id),
   });
   const ebay = createEbayStore(db, cards);
   const stockSync = createStockSyncStore(db, cards);
@@ -185,8 +182,6 @@ export function createInventory(path: string) {
         );
       }
     } else throw new Error("Unknown action.");
-    if (stockSync.enabled() && body.cardId)
-      stockSync.enqueue(integer(body.cardId, 1));
     return snapshot();
   });
   return {

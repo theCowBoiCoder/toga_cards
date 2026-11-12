@@ -1,5 +1,4 @@
 import { synchronizeRefund } from "../../utils/refund-service";
-import { runStockSync } from "../../utils/stock-sync-service";
 import { stripeClient } from "../../utils/stripe";
 import { getInventory } from "../../utils/inventory";
 export default defineEventHandler(async (event) => {
@@ -35,6 +34,5 @@ export default defineEventHandler(async (event) => {
   ) {
     await synchronizeRefund(session.id);
   }
-  if (getInventory().stockSync.enabled()) void runStockSync().catch(() => {});
   return { received: true };
 });
