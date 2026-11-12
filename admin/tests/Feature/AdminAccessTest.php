@@ -210,12 +210,14 @@ class AdminAccessTest extends TestCase
         });
     }
 
-    public function test_inventory_combines_owned_stock_and_pending_website_listing_without_publishing_it(): void
+    public function test_inventory_shows_website_availability_despite_old_ebay_review_errors(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => true]));
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $shop = $this->shopSnapshot();
-        $shop['products'][0]['price'] = 199;
+        $shop['products'][0]['price'] = 50;
+        $shop['products'][0]['available'] = 2;
+        $shop['listings'] = [['card_id' => 1, 'quantity' => 2]];
         $shop['stockSync']['targets'] = [['card_id' => 1, 'quantity' => 2]];
         $shop['stockSync']['jobs'] = [['card_id' => 1, 'error' => 'Match unmapped eBay listings before releasing stock.']];
         Http::preventStrayRequests();
@@ -226,13 +228,35 @@ class AdminAccessTest extends TestCase
         Livewire::test(Inventory::class)
             ->assertTableColumnStateSet('stock', 4, '1')
             ->assertTableColumnStateSet('stock_cost', 200, '1')
-            ->assertTableColumnStateSet('price', 199, '1')
-            ->assertTableColumnStateSet('available', 0, '1')
-            ->assertTableColumnStateSet('website_status', 'Needs review', '1')
-            ->assertSee('Match unmapped eBay listings before releasing stock.')
-            ->assertTableActionExists('receive')->assertTableActionExists('listing');
+            ->assertTableColumnStateSet('price', 50, '1')
+            ->assertTableColumnStateSet('available', 2, '1')
+            ->assertTableColumnStateSet('website_status', 'Available', '1')
+            ->assertDontSee('Match unmapped eBay listings before releasing stock.')
+            ->assertTableActionExists('receive')->assertTableActionExists('listing')
+            ->assertTableActionExists('updateEbay');
         Http::assertNotSent(fn ($request): bool => $request->method() === 'POST');
         $this->assertDatabaseCount('audit_events', 0);
+    }
+
+    public function test_manual_ebay_update_sends_only_the_selected_card(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => Http::response($this->snapshot()),
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($this->shopSnapshot()),
+            'http://127.0.0.1:3001/api/admin/stock-sync' => Http::response(['updated' => true]),
+        ]);
+
+        Livewire::test(Inventory::class)->callTableAction('updateEbay', '1')
+            ->assertHasNoTableActionErrors();
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() === 'http://127.0.0.1:3001/api/admin/stock-sync'
+            && $request->data() === ['action' => 'sync', 'cardIds' => [1]]);
+        Http::assertNotSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() !== 'http://127.0.0.1:3001/api/admin/stock-sync');
     }
 
     public function test_unified_shop_editor_rejects_more_copies_than_owned_without_sending_a_write(): void
