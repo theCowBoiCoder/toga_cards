@@ -26,6 +26,19 @@ class AdminAccessTest extends TestCase
         return ['cards' => [['id' => 1, 'player' => 'Test Player', 'club' => 'Arsenal', 'number' => '24', 'season' => '2026/27', 'collection' => 'Topps', 'variant' => 'Base', 'condition' => 'Near mint', 'stock' => 4, 'stock_cost' => 200]], 'sales' => [], 'sets' => []];
     }
 
+    public function test_administrator_can_open_the_team_page(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true, 'account_type' => 'staff']));
+        User::factory()->create(['name' => 'Other Administrator', 'is_admin' => true, 'account_type' => 'staff']);
+        Http::preventStrayRequests();
+
+        $this->withoutExceptionHandling()->get('/admin/team')
+            ->assertOk()
+            ->assertSee('Other Administrator');
+
+        Http::assertNothingSent();
+    }
+
     private function shopSnapshot(): array
     {
         return [
