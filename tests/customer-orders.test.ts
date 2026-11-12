@@ -266,3 +266,38 @@ test("a refund event arriving before payment completion reconciles the order onc
   assert.equal(inv.snapshot().cards[0].stock, 1);
   inv.close();
 });
+
+test("a definitive Stripe rejection records failure while connection failures remain unconfirmed", async () => {
+  const { inv, order } = paid();
+  const id = randomUUID();
+  const stripe: any = {
+    checkout: {
+      sessions: {
+        retrieve: async () => ({
+          id: "cs_test",
+          payment_status: "paid",
+          amount_total: 500,
+          currency: "gbp",
+          payment_intent: "pi_test",
+          metadata: { orderId: order.id },
+        }),
+      },
+    },
+    refunds: {
+      list: () => ({ async *[Symbol.asyncIterator]() {} }),
+      create: async () => {
+        throw Object.assign(new Error("Provider rejected refund"), {
+          type: "StripeInvalidRequestError",
+        });
+      },
+    },
+  };
+  await assert.rejects(
+    issueRefund(order.id, 100, "Rejected request", id, stripe, inv.shop),
+    /rejected/,
+  );
+  assert.equal(inv.shop.refundRequest(id).status, "failed");
+  assert.equal(inv.shop.refundSummary(order.id).refundHeld, 0);
+  assert.ok(inv.shop.prepareRefund(order.id, 100, "New request", randomUUID()));
+  inv.close();
+});

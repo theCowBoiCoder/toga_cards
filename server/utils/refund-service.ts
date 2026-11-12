@@ -48,16 +48,22 @@ export async function issueRefund(
     return { status: current.status };
   }
   // The persisted request survives timeouts; retries reuse this key and amount.
-  const refund = await stripe.refunds.create(
-    {
-      payment_intent: pi,
-      amount: request.amount,
-      metadata: { orderId, refundId: request.id },
-    },
-    { idempotencyKey: `toga-refund-${request.id}` },
-  );
-  shop.recordRefund(refund);
-  return { status: refund.status };
+  try {
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: pi,
+        amount: request.amount,
+        metadata: { orderId, refundId: request.id },
+      },
+      { idempotencyKey: `toga-refund-${request.id}` },
+    );
+    shop.recordRefund(refund);
+    return { status: refund.status };
+  } catch (error: any) {
+    if (error.type === "StripeInvalidRequestError")
+      shop.failRefundRequest(request.id);
+    throw error;
+  }
 }
 
 export async function synchronizeRefund(

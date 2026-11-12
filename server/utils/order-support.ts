@@ -230,6 +230,11 @@ export function createOrderSupport(
         .get(key) as any;
     },
   );
+  function failRefundRequest(id: string) {
+    db.prepare(
+      "UPDATE shop_refunds SET status='failed',updated=? WHERE id=? AND status='requested' AND stripe_id IS NULL",
+    ).run(new Date().toISOString(), id);
+  }
   function bindPayment(id: string, paymentIntent: string) {
     const current = order(id);
     if (
@@ -306,6 +311,7 @@ export function createOrderSupport(
     refundSummary,
     prepareRefund,
     refundRequest,
+    failRefundRequest,
     bindPayment,
     recordRefund,
   };
