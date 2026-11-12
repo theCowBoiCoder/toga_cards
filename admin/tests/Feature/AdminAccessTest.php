@@ -253,6 +253,46 @@ class AdminAccessTest extends TestCase
         $this->assertDatabaseCount('audit_events', 0);
     }
 
+    public function test_inventory_team_and_card_type_filters_combine_with_search_and_reset_pagination(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $cards = collect(range(1, 32))->map(fn (int $id): array => [
+            ...$this->snapshot()['cards'][0],
+            'id' => $id, 'player' => 'Player '.$id, 'number' => (string) $id,
+            'club' => $id % 2 === 0 ? 'Arsenal' : 'Chelsea',
+            'variant' => $id <= 16 ? 'Base' : 'Future Stars',
+        ])->all();
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => Http::response(['cards' => $cards, 'sales' => [], 'sets' => []]),
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($this->shopSnapshot()),
+        ]);
+
+        Livewire::test(Inventory::class)
+            ->assertCountTableRecords(32)
+            ->call('gotoPage', 2)
+            ->assertCanSeeTableRecords(['26'])
+            ->filterTable('club', 'Arsenal')
+            ->assertCountTableRecords(16)
+            ->assertCanSeeTableRecords(['2', '32'])
+            ->assertCanNotSeeTableRecords(['1', '31'])
+            ->filterTable('variant', 'Future Stars')
+            ->assertCountTableRecords(8)
+            ->assertCanSeeTableRecords(['18', '32'])
+            ->assertCanNotSeeTableRecords(['2', '17'])
+            ->searchTable('Player 2')
+            ->assertCountTableRecords(5)
+            ->assertCanNotSeeTableRecords(['18', '30'])
+            ->searchTable('no such player')
+            ->assertCountTableRecords(0)
+            ->searchTable('')
+            ->resetTableFilters()
+            ->assertCountTableRecords(32);
+
+        Http::assertNotSent(fn ($request): bool => $request->method() === 'POST');
+    }
+
     public function test_old_website_listing_url_redirects_to_the_combined_inventory_page(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => true]));

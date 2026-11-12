@@ -11,6 +11,10 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 
 class Inventory extends RecordsPage
 {
@@ -21,6 +25,38 @@ class Inventory extends RecordsPage
     protected static ?int $navigationSort = 10;
 
     protected string $view = 'filament.pages.inventory';
+
+    public function table(Table $table): Table
+    {
+        return parent::table($table)
+            ->filters([
+                SelectFilter::make('club')->label('Team')->placeholder('All teams')
+                    ->options(fn (): array => $this->filterOptions('club'))->searchable(),
+                SelectFilter::make('variant')->label('Card type')->placeholder('All card types')
+                    ->options(fn (): array => $this->filterOptions('variant'))->searchable(),
+            ], layout: FiltersLayout::AboveContent)
+            ->filtersFormColumns(2)
+            ->deferFilters(false);
+    }
+
+    protected function filterOptions(string $column): array
+    {
+        return collect($this->client()->get('/api/inventory')['cards'])
+            ->pluck($column)->filter()->unique()->sort()
+            ->mapWithKeys(fn (string $value): array => [$value => $value])->all();
+    }
+
+    protected function filterRows(Collection $rows, array $filters): Collection
+    {
+        foreach (['club', 'variant'] as $column) {
+            $value = $filters[$column]['value'] ?? null;
+            if (filled($value)) {
+                $rows = $rows->whereStrict($column, $value);
+            }
+        }
+
+        return $rows;
+    }
 
     protected function sourceRows(): array
     {

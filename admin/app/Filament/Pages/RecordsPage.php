@@ -12,6 +12,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 abstract class RecordsPage extends Page implements HasTable
@@ -41,11 +42,17 @@ abstract class RecordsPage extends Page implements HasTable
         return [];
     }
 
+    protected function filterRows(Collection $rows, array $filters): Collection
+    {
+        return $rows;
+    }
+
     public function table(Table $table): Table
     {
-        return $table->records(function (?string $search, ?string $sortColumn, ?string $sortDirection, int $page, int $recordsPerPage): LengthAwarePaginator {
+        return $table->records(function (?string $search, ?string $sortColumn, ?string $sortDirection, int $page, int $recordsPerPage, array $filters): LengthAwarePaginator {
             $this->client()->authorize();
             $rows = collect($this->sourceRows())->keyBy('id');
+            $rows = $this->filterRows($rows, $filters);
             if (filled($search)) {
                 $rows = $rows->filter(fn (array $row): bool => str_contains(mb_strtolower(implode(' ', array_filter($row, fn ($value): bool => is_scalar($value)))), mb_strtolower($search)));
             }
