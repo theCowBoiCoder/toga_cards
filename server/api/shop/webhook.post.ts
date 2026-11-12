@@ -1,4 +1,3 @@
-import { runStockSync } from "../../utils/stock-sync-service";
 import { stripeClient } from "../../utils/stripe";
 import { getInventory } from "../../utils/inventory";
 export default defineEventHandler(async (event) => {
@@ -27,6 +26,5 @@ export default defineEventHandler(async (event) => {
   if (notification.type === "checkout.session.completed")
     shop.complete(session);
   if (notification.type === "checkout.session.expired") shop.expire(session.id);
-  if (getInventory().stockSync.enabled()) void runStockSync().catch(() => {});
   return { received: true };
 });

@@ -293,6 +293,42 @@ class AdminAccessTest extends TestCase
         Http::assertNotSent(fn ($request): bool => $request->method() === 'POST');
     }
 
+    public function test_saving_counted_stock_retains_inventory_filters_and_search(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $cards = [
+            $this->snapshot()['cards'][0],
+            [...$this->snapshot()['cards'][0], 'id' => 2, 'club' => 'Chelsea'],
+            [...$this->snapshot()['cards'][0], 'id' => 3, 'variant' => 'Future Stars'],
+        ];
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://127.0.0.1:3001/api/inventory' => function ($request) use (&$cards) {
+                if ($request->method() === 'POST') {
+                    $cards[0]['stock'] = $request['quantity'];
+                }
+
+                return Http::response(['cards' => $cards, 'sales' => [], 'sets' => []]);
+            },
+            'http://127.0.0.1:3001/api/admin/shop' => Http::response($this->shopSnapshot()),
+        ]);
+
+        Livewire::test(Inventory::class)
+            ->filterTable('club', 'Arsenal')
+            ->filterTable('variant', 'Base')
+            ->searchTable('Test Player')
+            ->callTableAction('count', '1', data: ['quantity' => 7, 'expectedStock' => 4, 'unitCost' => 0, 'date' => '2026-11-12'])
+            ->assertHasNoTableActionErrors()
+            ->assertSet('tableFilters.club.value', 'Arsenal')
+            ->assertSet('tableFilters.variant.value', 'Base')
+            ->assertSet('tableSearch', 'Test Player')
+            ->assertCountTableRecords(1)
+            ->assertCanSeeTableRecords(['1'])
+            ->assertCanNotSeeTableRecords(['2', '3'])
+            ->assertTableColumnStateSet('stock', 7, '1');
+    }
+
     public function test_old_website_listing_url_redirects_to_the_combined_inventory_page(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => true]));

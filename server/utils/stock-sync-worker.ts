@@ -14,170 +14,79 @@ export type StockSyncDependencies = {
   inventory: ReturnType<typeof createInventory>;
   syncOrders: (owner: string) => Promise<void>;
   readListing: (itemId: string) => Promise<LiveListing>;
-  reduceListing: (
-    itemId: string,
-    quantity: number,
-    live: LiveListing,
-  ) => Promise<void>;
+  updateListing: (itemId: string, quantity: number, live: LiveListing) => Promise<void>;
 };
 
-export async function runStockSyncCycle(deps: StockSyncDependencies) {
-  const { inventory: inv } = deps,
-    state = inv.stockSync;
-  if (!state.enabled()) return;
+// No durable write queue: an uncertain update must be selected again by the
+// seller, never retried by a timer, payment, mapping or inventory mutation.
+export async function runStockSyncCycle(deps: StockSyncDependencies, cardIds: number[] = []) {
+  if (!cardIds.length) return;
+  if (cardIds.length > 50 || new Set(cardIds).size !== cardIds.length ||
+      cardIds.some(id => !Number.isSafeInteger(id) || id < 1))
+    throw new Error("Choose between 1 and 50 different cards to update.");
+  const { inventory: inv } = deps;
+  const state = inv.stockSync;
+  state.assertIdle();
   const owner = state.acquire();
-  if (!owner) return;
+  if (!owner) throw new Error("Another eBay stock update is running.");
   const heartbeat = setInterval(() => {
-    try {
-      state.renew(owner);
-    } catch {}
+    try { state.renew(owner); } catch {}
   }, 30000);
   heartbeat.unref();
   try {
+    cardIds.forEach(id => state.plan(id));
     await deps.syncOrders(owner);
     state.assertOwner(owner);
-    if (
-      !inv.ebay.setting("autoSince") ||
-      inv.ebay.setting("lastError") ||
-      inv.ebay.setting("notificationError")
-    )
-      throw new Error(
-        "Resolve eBay connection errors and finish stocktake before syncing quantities.",
-      );
+    if (inv.ebay.setting("lastError") || inv.ebay.setting("notificationError"))
+      throw new Error("Resolve eBay connection errors before updating selected listings.");
     state.observe();
-    state.enqueueAll();
-    for (const job of state.jobs()) {
-      state.renew(owner);
-      let p = state.plan(job.card_id);
-      if (
-        job.signature === p.signature &&
-        (job.status === "verified" || job.retry_at > Date.now())
-      )
-        continue;
+    for (const id of cardIds) {
+      state.enqueue(id);
       try {
-        if (p.listings.some((l) => l.variation)) throw new Error(p.blocked);
-        const keys = p.listings.map((l) => l.key);
-        for (const key of keys) {
-          p = state.plan(job.card_id);
-          const listing = p.listings.find((l) => l.key === key);
-          if (!listing)
-            throw new Error(
-              "Listing identity changed during stock reconciliation.",
-            );
-          let remaining = p.target;
-          let target = 0;
-          for (const row of p.listings) {
-            const allocated = Math.min(row.available, remaining);
-            remaining -= allocated;
-            if (row.key === key) target = allocated;
-          }
-          // A shared inventory pool is distributed across duplicate listings,
-          // never copied in full to each listing. This path only reduces stock.
-          const needsRemote =
-            listing.available > target || p.requested > p.current;
-          if (!needsRemote) continue;
-          const before = await deps.readListing(listing.itemId);
+        const plan = state.plan(id);
+        if (plan.blocked) throw new Error(plan.blocked);
+        if (!plan.listings.length) throw new Error("Match an active eBay listing for this card first.");
+        // Duplicate listings share the website quantity. The first listing gets
+        // stock and the others are zeroed; reductions precede increases.
+        const changes = await Promise.all(plan.listings.map(async (listing, index) => {
+          const live = await deps.readListing(listing.itemId);
           state.assertOwner(owner);
-          if (
-            !before.active ||
-            !before.fixedPrice ||
-            before.variation ||
-            before.sku !== listing.sku
-          )
-            throw new Error(
-              "Listing identity/type changed. Review its mapping before retrying.",
-            );
-          if (
-            listing.sold === undefined ||
-            before.sold !== listing.sold ||
-            before.available !== listing.available
-          )
-            throw new Error(
-              "eBay availability or sold count changed. Waiting for the next order sync.",
-            );
-          if (before.available > target) {
-            await deps.reduceListing(listing.itemId, target, before);
-            state.assertOwner(owner);
-          }
-          let after = await deps.readListing(listing.itemId);
+          if (!live.active || !live.fixedPrice || live.variation || live.sku !== listing.sku)
+            throw new Error("Listing identity/type changed. Review its mapping before updating.");
+          if (listing.sold === undefined || live.sold !== listing.sold || live.available !== listing.available)
+            throw new Error("eBay stock changed during the check. Refresh and select the update again.");
+          return { listing, live, quantity: index === 0 ? plan.target : 0 };
+        }));
+        changes.sort((a, b) => Number(a.quantity > a.live.available) - Number(b.quantity > b.live.available));
+        for (const change of changes) {
+          state.renew(owner);
+          const current = await deps.readListing(change.listing.itemId);
           state.assertOwner(owner);
-          if (after.sold !== before.sold || after.available > target) {
-            if (after.available > 0) {
-              await deps.reduceListing(listing.itemId, 0, after);
-              state.assertOwner(owner);
-            }
-            throw new Error(
-              "Sale or quantity change occurred during transfer. eBay stock was quarantined; website stock remains held for reconciliation.",
-            );
-          }
-          await deps.syncOrders(owner);
+          if (!current.active || !current.fixedPrice || current.variation || current.sku !== change.live.sku ||
+              current.sold !== change.live.sold || current.available !== change.live.available)
+            throw new Error("eBay stock changed before the update. Refresh and select the update again.");
+          if (change.quantity !== change.live.available)
+            await deps.updateListing(change.listing.itemId, change.quantity, current);
           state.assertOwner(owner);
-          state.observe();
-          p = state.plan(job.card_id);
-          const latest = p.listings.find((l) => l.key === key);
-          if (
-            !latest ||
-            latest.sold !== after.sold ||
-            latest.available !== after.available
-          )
-            throw new Error(
-              "Post-update marketplace snapshot differs. Stock remains held for reconciliation.",
-            );
-          after = await deps.readListing(listing.itemId);
-          state.assertOwner(owner);
-          if (
-            after.sold !== latest.sold ||
-            after.available !== latest.available
-          )
-            throw new Error(
-              "Marketplace changed before transfer completed. Retrying after order sync.",
-            );
+          const verified = await deps.readListing(change.listing.itemId);
+          if (verified.sold !== change.live.sold || verified.available !== change.quantity)
+            throw new Error("eBay stock changed during the update. Refresh and review before selecting another update.");
         }
-        p = state.plan(job.card_id);
-        if (p.listings.reduce((n, l) => n + l.available, 0) > p.target)
-          throw new Error(
-            "Stock remains overallocated across eBay listings. Retrying verified reductions.",
-          );
-        if (p.requested > p.current) {
-          for (const listing of p.listings) {
-            const live = await deps.readListing(listing.itemId);
-            state.assertOwner(owner);
-            if (
-              live.sold !== listing.sold ||
-              live.available !== listing.available
-            )
-              throw new Error(
-                "Marketplace changed before website allocation was activated.",
-              );
-          }
-        }
-        if (p.blocked) throw new Error(p.blocked);
-        // No live listing means no eBay exposure for this mapped card. Unknown
-        // active listings still block all newly requested website allocations.
-        state.activate(job.card_id, owner);
-        state.finish(job.card_id, owner, "verified");
+        state.finish(id, owner, "verified");
       } catch (error) {
         state.assertOwner(owner);
         const message = error instanceof Error ? error.message : "";
-        const safe =
-          /^(Multiple |Variation |Resolve |Website |Match |Listing |eBay |Sale |Post-update |Marketplace |Stock |This workspace)/.test(
-            message,
-          )
-            ? message
-            : "eBay update outcome is uncertain. Live quantities will be checked before retrying.";
-        state.finish(job.card_id, owner, "retry", safe);
+        const safe = /^(Match |Multiple |Variation |Resolve |Website |Listing |eBay )/.test(message)
+          ? message : "eBay update outcome is uncertain. Refresh and review before selecting another update.";
+        state.finish(id, owner, "review", safe);
+        throw new Error(safe);
       }
     }
     state.setSetting("stockSyncLastSuccess", new Date().toISOString());
     state.setSetting("stockSyncError", "");
-  } catch {
-    state.setSetting(
-      "stockSyncError",
-      "Stock sync could not finish. Check the eBay connection and order review queue; website availability is paused.",
-    );
-    throw new Error(
-      "Stock sync could not finish. Existing allocations remain reserved.",
-    );
+  } catch (error) {
+    state.setSetting("stockSyncError", "The selected eBay update did not finish. Website stock is unchanged; review before updating again.");
+    throw error;
   } finally {
     clearInterval(heartbeat);
     state.release(owner);

@@ -69,7 +69,7 @@ abstract class RecordsPage extends Page implements HasTable
         try {
             $this->client()->mutate($path, $data);
             Notification::make()->title($title)->success()->send();
-            $this->resetTable();
+            $this->flushCachedTableRecords();
         } catch (ValidationException $exception) {
             Notification::make()->title('Change not confirmed')->body(implode(' ', $exception->validator->errors()->all()))->danger()->persistent()->send();
             throw new Halt;

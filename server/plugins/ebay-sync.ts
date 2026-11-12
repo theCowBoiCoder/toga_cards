@@ -1,6 +1,5 @@
 import { getInventory } from "../utils/inventory";
 import { syncEbay } from "../utils/ebay-service";
-import { runStockSync } from "../utils/stock-sync-service";
 import { pollEbayNotifications } from "../utils/ebay-notifications";
 export default defineNitroPlugin((nitro) => {
   if (process.env.TOGA_PREVIEW === "1") return;
@@ -11,8 +10,7 @@ export default defineNitroPlugin((nitro) => {
   let previousImport = 0;
   const tick = () => {
     const inv = getInventory();
-    if (inv.stockSync.enabled()) void runStockSync().catch(() => {});
-    else if (
+    if (
       inv.ebay.setting("tokens") &&
       Date.now() - previousImport > 15 * 60 * 1000
     ) {

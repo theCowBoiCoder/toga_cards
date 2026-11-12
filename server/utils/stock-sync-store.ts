@@ -1,8 +1,8 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 
-// Website allocations and eBay availability are distinct pools. A transfer to
-// the website is not sellable until eBay has surrendered those copies.
+// Website quantities are authoritative. Marketplace writes are one-off actions
+// for explicitly selected cards; legacy automatic-sync settings are ignored.
 export function createStockSyncStore(
   db: Database.Database,
   cards: () => any[],
@@ -23,7 +23,16 @@ export function createStockSyncStore(
         "INSERT INTO ebay_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       )
       .run(key, value);
-  const enabled = () => setting("stockSyncEnabled") === "true";
+  if (!setting("websiteStockAuthorityVersion")) {
+    db.transaction(() => {
+      db.exec(`UPDATE shop_listings SET quantity=(
+        SELECT quantity FROM shop_allocation_targets WHERE card_id=shop_listings.card_id
+      ) WHERE card_id IN (SELECT card_id FROM shop_allocation_targets)`);
+      setSetting("stockSyncError", "");
+      db.exec("UPDATE stock_sync_jobs SET status='not_requested',error='',retry_at=0");
+      setSetting("websiteStockAuthorityVersion", "1");
+    })();
+  }
   const lease = () =>
     db.prepare("SELECT * FROM stock_sync_lease WHERE id=1").get() as any;
   const assertIdle = () => {
@@ -36,7 +45,6 @@ export function createStockSyncStore(
     const lock = lease();
     if (!lock || lock.owner !== owner || lock.expires <= Date.now())
       throw new Error("Stock synchronisation lock expired.");
-    if (!enabled()) throw new Error("Stock synchronisation has been paused.");
     if (setting("accountDeleted"))
       throw new Error("This workspace seller account has been deleted.");
   }
@@ -73,7 +81,6 @@ export function createStockSyncStore(
     db.prepare(
       "INSERT INTO shop_allocation_targets VALUES (?,?) ON CONFLICT(card_id) DO UPDATE SET quantity=excluded.quantity",
     ).run(id, quantity);
-    enqueue(id);
   };
   function plan(id: number) {
     const card = cards().find((c) => c.id === id);
@@ -150,8 +157,7 @@ export function createStockSyncStore(
           l.sold - old.sold !== accounted - old.accounted)
       );
     });
-    const unmapped = active.filter((l) => !l.cardId).length;
-    const target = Math.max(0, card.stock - Math.max(requested, current, held));
+    const target = Math.max(0, Math.min(current, card.stock) - held);
     let blocked = "";
     if (listings.some((l) => l.variation))
       blocked = "Variation listing needs a reviewed SKU allocation.";
@@ -164,8 +170,6 @@ export function createStockSyncStore(
     else if (requested > card.stock || requested < held)
       blocked =
         "Website allocation conflicts with physical stock or checkout holds.";
-    else if (requested > 0 && unmapped)
-      blocked = `Match the ${unmapped} unmapped eBay listings before releasing additional website stock.`;
     const signature = JSON.stringify({
       stock: card.stock,
       current,
@@ -219,53 +223,24 @@ export function createStockSyncStore(
         ).run(row.key, l.sold, accounted);
     }
   });
-  const activate = db.transaction((id: number, owner: string) => {
-    assertOwner(owner);
-    const p = plan(id);
-    if (p.blocked) throw new Error(p.blocked);
-    db.prepare("UPDATE shop_listings SET quantity=? WHERE card_id=?").run(
-      p.requested,
-      id,
-    );
-  });
   const sold = (id: number, quantity: number) => {
     db.prepare(
       "UPDATE shop_allocation_targets SET quantity=MAX(0,quantity-?) WHERE card_id=?",
     ).run(quantity, id);
-    enqueue(id);
   };
-  function usable(id: number) {
-    if (setting("stockSyncPaused") === "true") return false;
-    if (!enabled()) return true;
-    const fresh =
-      Date.now() - Date.parse(setting("stockSyncLastSuccess")) < 5 * 60 * 1000;
-    const job = db
-      .prepare("SELECT status FROM stock_sync_jobs WHERE card_id=?")
-      .get(id) as any;
-    return (
-      fresh &&
-      !!setting("autoSince") &&
-      !setting("stockSyncError") &&
-      !setting("lastError") &&
-      !setting("notificationError") &&
-      job?.status === "verified" &&
-      !plan(id).blocked
-    );
-  }
   function finish(id: number, owner: string, status: string, error = "") {
     assertOwner(owner);
     const job = db
       .prepare("SELECT attempts FROM stock_sync_jobs WHERE card_id=?")
       .get(id) as any;
     const attempts = status === "verified" ? 0 : (job?.attempts || 0) + 1;
-    const delay = Math.min(15 * 60 * 1000, 15000 * 2 ** Math.min(attempts, 6));
     db.prepare(
       "UPDATE stock_sync_jobs SET status=?,attempts=?,error=?,retry_at=?,verified_at=?,signature=? WHERE card_id=?",
     ).run(
       status,
       attempts,
       error,
-      status === "verified" ? 0 : Date.now() + delay,
+      0,
       status === "verified" ? new Date().toISOString() : null,
       plan(id).signature,
       id,
@@ -278,8 +253,9 @@ export function createStockSyncStore(
       )
       .all() as any[];
   const status = () => ({
-    enabled: enabled(),
-    paused: setting("stockSyncPaused") === "true",
+    mode: "manual",
+    enabled: false,
+    paused: false,
     lastSuccess: setting("stockSyncLastSuccess"),
     lastError: setting("stockSyncError"),
     running: lease()?.expires > Date.now(),
@@ -293,31 +269,7 @@ export function createStockSyncStore(
     ).n,
     jobs: jobs(),
   });
-  const retryNow = () => {
-    assertIdle();
-    enqueueAll();
-    db.prepare(
-      "UPDATE stock_sync_jobs SET retry_at=0 WHERE status<>'verified'",
-    ).run();
-  };
-  function enable() {
-    assertIdle();
-    if (!setting("tokens") || !setting("autoSince"))
-      throw new Error(
-        "Connect eBay and finish inventory stocktake before enabling stock sync.",
-      );
-    setSetting("stockSyncEnabled", "true");
-    setSetting("stockSyncPaused", "false");
-    retryNow();
-  }
-  const pause = () => {
-    setSetting("stockSyncEnabled", "false");
-    setSetting("stockSyncPaused", "true");
-  };
   return {
-    paused: () => setting("stockSyncPaused") === "true",
-    pause,
-    enabled,
     assertIdle,
     assertOwner,
     acquire,
@@ -329,13 +281,9 @@ export function createStockSyncStore(
     sold,
     plan,
     observe,
-    activate,
-    usable,
     finish,
     jobs,
     status,
-    enable,
-    retryNow,
     setSetting,
   };
 }

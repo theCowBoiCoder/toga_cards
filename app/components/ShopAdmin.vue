@@ -38,13 +38,11 @@ async function save() {
   busy.value = true;
   message.value = "";
   try {
-    const result = await $fetch<any>("/api/admin/shop", {
+    await $fetch<any>("/api/admin/shop", {
       method: "POST",
       body: form,
     });
-    message.value = result.pendingSync
-      ? "Saved. Website stock will be released after eBay verification and any mapping issues are resolved."
-      : "Website listing saved.";
+    message.value = "Website listing saved. Confirmed stock is available immediately.";
     await refresh();
   } catch (e: any) {
     message.value = e.data?.statusMessage || "Could not save.";
@@ -67,14 +65,11 @@ async function reconcile(id: string) {
     busy.value = false;
   }
 }
-async function stockAction(action: string) {
+async function stockAction() {
   busy.value = true;
   try {
-    await $fetch("/api/admin/stock-sync", { method: "POST", body: { action } });
-    message.value =
-      action === "pause"
-        ? "Stock sync paused; website purchasing is paused."
-        : "Stock sync queued. Progress updates below.";
+    await $fetch("/api/admin/stock-sync", { method: "POST", body: { action: "sync", cardIds: [form.cardId] } });
+    message.value = "Selected eBay stock updated. Website prices are unchanged.";
     await refresh();
   } catch (e: any) {
     message.value = e.data?.statusMessage || "Stock sync could not start.";
@@ -100,27 +95,17 @@ const syncProblems = computed(() =>
     <header>
       <div>
         <h2>Website shop</h2>
-        <p>One inventory ledger · Separate channel allocations</p>
+        <p>Website stock is authoritative</p>
       </div>
       <NuxtLink to="/shop">View storefront ↗</NuxtLink>
     </header>
     <p>
-      Website copies are reserved separately from eBay copies. Automatic sync
-      reduces eBay availability and verifies the change before releasing new
-      website stock. Uncertain orders and unmapped listings prevent website
-      publication.
+      Confirmed website quantities are available immediately. eBay stock changes
+      only when you select a card and choose Update eBay stock. Prices stay unchanged.
     </p>
     <section class="sync-status">
-      <h3>Automatic stock synchronisation</h3>
-      <p>
-        {{
-          data?.stockSync?.enabled
-            ? "Enabled · checks every two minutes and after stock changes"
-            : data?.stockSync?.paused
-              ? "Paused · website purchasing paused"
-              : "Not enabled"
-        }}{{ data?.stockSync?.running ? " · Running now" : "" }}
-      </p>
+      <h3>Manual eBay stock updates</h3>
+      <p>No automatic quantity updates or retries run. Website stock is independent of eBay checks.</p>
       <p v-if="data?.stockSync?.lastSuccess">
         Last completed check: {{ data.stockSync.lastSuccess }} ·
         {{
@@ -129,38 +114,15 @@ const syncProblems = computed(() =>
         verified cards
       </p>
       <p v-if="data?.stockSync?.unmapped">
-        <strong
-          >{{ data.stockSync.unmapped }} active eBay listings need
-          matching.</strong
-        >
-        New website stock stays unavailable until every active listing has an
-        inventory match. <a href="/admin?ebay=review">Review eBay mappings ↗</a>
+        {{ data.stockSync.unmapped }} eBay listings need matching before those listings can be updated.
+        This does not block website sales.
       </p>
-      <p v-if="data?.stockSync?.lastError" role="alert">
-        {{ data.stockSync.lastError }}
-      </p>
-      <p>
-        Quantities are never automatically increased to fill a discrepancy.
-        Count and review additional stock before relisting it.
-      </p>
-      <div class="sync-buttons">
-        <button
-          v-if="!data?.stockSync?.enabled"
-          :disabled="busy"
-          @click="stockAction('enable')"
-        >
-          Enable automatic stock sync</button
-        ><template v-else
-          ><button
-            :disabled="busy || data.stockSync.running"
-            @click="stockAction('sync')"
-          >
-            Check stock now</button
-          ><button :disabled="busy" @click="stockAction('pause')">
-            Pause sync and website purchasing
-          </button></template
-        >
-      </div>
+      <p v-if="data?.stockSync?.lastError" role="alert">{{ data.stockSync.lastError }}</p>
+      <p>The selected card’s current website availability is sent to its linked eBay listings.
+        If several are linked, the first receives the stock and the others are set to zero.</p>
+      <button :disabled="busy || !form.cardId || data?.stockSync?.running" @click="stockAction()">
+        Update eBay stock for selected card
+      </button>
       <details v-if="syncProblems.length">
         <summary>
           {{ syncProblems.length }} cards pending or needing review
@@ -213,8 +175,7 @@ const syncProblems = computed(() =>
           placeholder="https://…" /></label
       ><label class="allocation-confirm"
         ><input v-model="form.stockConfirmed" type="checkbox" />I have checked
-        physical stock and condition; these copies can be reserved for website
-        buyers after eBay verification.</label
+        physical stock and condition; these copies are available for website buyers.</label
       ><button :disabled="busy || !form.cardId" type="submit">
         {{ busy ? "Saving…" : "Save website listing" }}
       </button>
