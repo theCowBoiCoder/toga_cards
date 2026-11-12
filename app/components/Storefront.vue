@@ -147,14 +147,14 @@ const route = useRoute();
 <template>
   <div class="store">
     <div class="announcement">
-      A new home for your next find.
-      <span>Explore the 2026/27 Premier League catalogue ↗</span>
+      Football cards. For your collection.
+      <span>Premier League · Singles · Inserts · Set essentials</span>
     </div>
     <header class="shop-header">
       <NuxtLink to="/" class="wordmark"
-        >toga<span>cards</span><i>✳</i></NuxtLink
+        ><span class="brand-monogram">T</span>toga<span>cards</span></NuxtLink
       >
-      <nav>
+      <nav aria-label="Main navigation">
         <NuxtLink to="/shop">Shop all cards</NuxtLink
         ><a
           href="/shop?collection=set"
@@ -163,7 +163,7 @@ const route = useRoute();
             navigateTo('/shop');
           "
           >Complete your set</a
-        ><a href="/#about">Our corner of the hobby</a>
+        ><a href="/#about">About Toga</a>
       </nav>
       <button class="basket-button" @click="basketOpen = true">
         <ShoppingBag :size="19" /><span>Basket</span><b>{{ count }}</b>
@@ -180,24 +180,21 @@ const route = useRoute();
     <main>
       <section v-if="!shopPage" class="hero">
         <div class="hero-copy">
-          <div class="eyebrow"><span></span> FOR THE LOVE OF THE FIND</div>
-          <h1>Small cards.<br />Big <em>feeling.</em></h1>
+          <div class="eyebrow">THE FOOTBALL CARD COLLECTION</div>
+          <h1>Your collection.<br /><em>Your next card.</em></h1>
           <p>
-            The missing number. Your favourite player. That next great find.
-            Make a little room in your collection.
+            Find your favourite players, explore the inserts and tick off
+            the missing numbers. Football cards, all in one place.
           </p>
           <NuxtLink class="orange-button" to="/shop"
-            >Find your next card <ArrowUpRight :size="20"
+            >Shop the collection <ArrowRight :size="20"
           /></NuxtLink>
           <div class="hero-caption">
-            PREMIER LEAGUE · TOPPS FLAGSHIP · 2026/27
+            TOPPS FLAGSHIP · PREMIER LEAGUE · 2026/27
           </div>
         </div>
         <div class="hero-art">
-          <div class="orbit"></div>
-          <div class="edition-stamp">
-            THE<br /><strong>26/27</strong><br />COLLECTION
-          </div>
+          <div class="collection-label">COLLECTION SPOTLIGHT <span>2026/27</span></div>
           <div
             v-for="(c, i) in featured"
             :key="c.id"
@@ -206,27 +203,27 @@ const route = useRoute();
           >
             <CardArtwork :card="c" :index="i" />
           </div>
-          <div class="art-note">Every collection starts with a card. ↗</div>
+          <div class="art-note">Premier League <span>Singles & inserts</span></div>
         </div>
       </section>
       <section v-if="!shopPage" class="shop-values">
         <span><Layers :size="20" /> Singles, inserts & set essentials</span
         ><span><Package :size="20" /> One basket. Combined postage.</span
-        ><span><ShieldCheck :size="20" /> A shop built around collectors</span>
+        ><span><ShieldCheck :size="20" /> Clear prices & stock availability</span>
       </section>
       <section class="catalogue" id="catalogue">
         <div class="section-heading">
           <div>
             <div class="eyebrow">
               {{
-                shopPage ? "THE TOGA CARDS SHOP" : "YOUR NEXT FIND STARTS HERE"
+                shopPage ? "THE TOGA CARDS SHOP" : "BROWSE THE COLLECTION"
               }}
             </div>
             <h2>
               {{
                 shopPage
-                  ? "Find your missing piece."
-                  : "A little something for your binder."
+                  ? "Football cards"
+                  : "Find your next addition"
               }}
             </h2>
           </div>
@@ -239,10 +236,9 @@ const route = useRoute();
           {{
             data?.demo
               ? "Shop preview · Demonstration stock and prices, separate from your real inventory."
-              : "Shop preview · Explore the real catalogue."
+              : "Browse the catalogue. Only cards with confirmed stock and a price are available to buy."
           }}
-          Only cards with confirmed stock and a price can be purchased. Card
-          illustrations are placeholders.
+          Product photos appear where provided; labelled illustrations are catalogue previews.
         </div>
         <div class="shop-tools">
           <div class="search-box">
@@ -261,7 +257,7 @@ const route = useRoute();
           </select>
         </div>
         <div class="results-bar">
-          <span>{{ results.length.toLocaleString() }} cards to explore</span
+          <span>{{ results.length.toLocaleString() }} cards</span
           ><label
             ><input v-model="onlyStock" type="checkbox" /> In stock only</label
           ><select v-model="sort" aria-label="Sort cards">
@@ -272,7 +268,7 @@ const route = useRoute();
         </div>
         <div v-if="!results.length" class="empty-results">
           <Layers :size="36" />
-          <h3>No cards here just yet.</h3>
+            <h3>No cards found</h3>
           <p>Try a different search or turn off the in-stock filter.</p>
           <button
             @click="
@@ -319,16 +315,16 @@ const route = useRoute();
           class="load-more"
           @click="page++"
         >
-          Explore more cards <ArrowRight :size="18" />
+          Load more cards <ArrowRight :size="18" />
         </button>
       </section>
       <section v-if="!shopPage" class="set-banner">
         <div>
-          <div class="eyebrow">ONE STEP CLOSER TO COMPLETE</div>
-          <h2>Mind the gaps.<br />We’ll help you fill them.</h2>
+          <div class="eyebrow">COMPLETE YOUR SET</div>
+          <h2>A shorter checklist.<br />A fuller collection.</h2>
           <p>
             Got a list of missing numbers? Search them together and find the
-            cards your binder’s been waiting for.
+            cards you need for your collection.
           </p>
           <NuxtLink to="/shop" class="text-link"
             >Explore the checklist <ArrowUpRight :size="20"
@@ -343,21 +339,21 @@ const route = useRoute();
         </div>
       </section>
       <section id="about" class="about-shop">
-        <div class="eyebrow">OUR CORNER OF THE HOBBY</div>
-        <h2>For the collectors.<br />The list-makers. The “just one more”s.</h2>
+        <div class="eyebrow">ABOUT TOGA CARDS</div>
+        <h2>Football cards, made simple.</h2>
         <p>
-          Toga Cards is a new home for football card collecting. Browse the
-          catalogue, discover your next addition and enjoy the small
-          satisfaction of a gap filled.
+          An independent shop for football card collectors. Search by player,
+          club or card number, find the singles you need and build your collection
+          at your own pace.
         </p>
       </section>
     </main>
     <footer class="shop-footer">
-      <NuxtLink to="/" class="wordmark">toga<span>cards</span><i>✳</i></NuxtLink
-      ><span>Good cards. Great finds.</span
-      ><NuxtLink to="/admin">Seller admin ↗</NuxtLink
+      <NuxtLink to="/" class="wordmark"><span class="brand-monogram">T</span>toga<span>cards</span></NuxtLink
+      ><span>Football cards. For your collection.</span
+      ><a href="/admin">Admin sign in <ArrowUpRight :size="14" /></a
       ><small
-        >Independent shop prototype. Not affiliated with Topps or the Premier
+        >Independent card shop. Not affiliated with Topps or the Premier
         League.</small
       >
     </footer>
@@ -375,7 +371,7 @@ const route = useRoute();
       >
         <header>
           <h2>
-            Your next finds <span>({{ count }})</span>
+            Your basket <span>({{ count }})</span>
           </h2>
           <button aria-label="Close basket" @click="basketOpen = false">
             <X />
@@ -383,7 +379,7 @@ const route = useRoute();
         </header>
         <div v-if="!lines.length" class="empty-results">
           <ShoppingBag :size="36" />
-          <h3>A little room for something good.</h3>
+          <h3>Your basket is empty</h3>
           <p>Your basket is empty. Explore the catalogue to get started.</p>
           <button @click="basketOpen = false">Keep exploring</button>
         </div>
