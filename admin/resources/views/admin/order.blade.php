@@ -18,4 +18,12 @@
         @endforeach
     </address>
     <p>{{ $order['tracking_reference'] ?? '' }}</p>
+    <p>{{ $order['carrier'] ?? '' }}</p>
+    @if(!empty($order['tracking_url']))<p><a href="{{ $order['tracking_url'] }}" target="_blank" rel="noopener noreferrer">Track delivery</a></p>@endif
+    <h4>Refunds</h4>
+    @foreach($order['refunds'] ?? [] as $refund)<p>£{{ number_format($refund['amount']/100,2) }} · {{ $refund['status'] }} · {{ $refund['stripe_id'] ?? 'Awaiting confirmation' }}<br>{{ $refund['reason'] }}</p>@endforeach
+    @if(!empty($order['returnRequest']))
+        <h4>Return request · {{ $order['returnRequest']['status'] }}</h4>
+        <p>{{ $order['returnRequest']['reason'] }}</p><p>{{ $order['returnRequest']['response'] }}</p>
+    @endif
 </div>

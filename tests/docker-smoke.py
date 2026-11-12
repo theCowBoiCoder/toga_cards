@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import http.cookiejar
+import urllib.parse
 import re
 import subprocess
 import time
@@ -68,6 +70,24 @@ try:
         assert response.status == 200, "Shop did not return HTTP 200"
         assert re.search(r"<title[^>]*>\s*Toga Cards\b", html, re.IGNORECASE), "Shop title is missing"
         assert 'aria-label="Search catalogue"' in html, "Shop catalogue did not render"
+    with request("/account/login") as response:
+        assert response.status == 200 and "Welcome back" in response.read().decode()
+        assert "no-store" in response.headers.get("Cache-Control", "")
+    with request("/account/orders") as response:
+        assert response.geturl() == origin + "/account/login"
+    with request("/account/login", data=b"") as response:
+        assert response.status == 419, "Customer login must enforce CSRF"
+    cookies = http.cookiejar.CookieJar()
+    customer = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
+    with customer.open(origin + "/account/register", timeout=10) as response:
+        register = response.read().decode()
+        csrf = re.search(r'name="_token" value="([^"]+)"', register).group(1)
+    fields = {"_token": csrf, "name": "Synthetic customer", "email": "customer@example.test", "password": "Synthetic-customer-password-123", "password_confirmation": "Synthetic-customer-password-123"}
+    with customer.open(origin + "/account/register", data=urllib.parse.urlencode(fields).encode(), timeout=10) as response:
+        assert response.geturl() == origin + "/account/orders"
+        assert "No orders yet" in response.read().decode()
+    with customer.open(origin + "/account/collection?search=Max+Dowman", timeout=10) as response:
+        assert "My collection" in response.read().decode()
     print("Combined Docker smoke passed: health, assets, login boundary, private API isolation, CSRF and storefront.")
 except Exception:
     subprocess.run(["docker", "logs", "--tail", "60", name], check=False)

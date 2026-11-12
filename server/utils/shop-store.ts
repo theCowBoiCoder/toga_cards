@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
+import { createOrderSupport } from "./order-support";
 
 export function createShopStore(
   db: Database.Database,
@@ -11,19 +12,27 @@ export function createShopStore(
     request: (id: number, quantity: number) => void;
     usable: (id: number) => boolean;
     sold: (id: number, quantity: number) => void;
+    enqueue?: (id: number) => void;
   },
 ) {
   db.exec(`CREATE TABLE IF NOT EXISTS shop_listings (card_id INTEGER PRIMARY KEY REFERENCES cards(id), price INTEGER NOT NULL, quantity INTEGER NOT NULL, photo TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS shop_orders (id TEXT PRIMARY KEY, status TEXT NOT NULL, session_id TEXT UNIQUE, total INTEGER NOT NULL, shipping INTEGER NOT NULL, created TEXT NOT NULL, email TEXT, address TEXT);
     CREATE TABLE IF NOT EXISTS shop_order_items (order_id TEXT NOT NULL REFERENCES shop_orders(id), card_id INTEGER NOT NULL REFERENCES cards(id), quantity INTEGER NOT NULL, price INTEGER NOT NULL, PRIMARY KEY(order_id,card_id));`);
   const orderColumns = new Set(
-    (db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[])
-      .map((column) => column.name),
+    (
+      db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[]
+    ).map((column) => column.name),
   );
   if (!orderColumns.has("dispatched_at"))
     db.exec("ALTER TABLE shop_orders ADD COLUMN dispatched_at TEXT");
   if (!orderColumns.has("tracking_reference"))
-    db.exec("ALTER TABLE shop_orders ADD COLUMN tracking_reference TEXT NOT NULL DEFAULT ''");
+    db.exec(
+      "ALTER TABLE shop_orders ADD COLUMN tracking_reference TEXT NOT NULL DEFAULT ''",
+    );
+  const support = createOrderSupport(db, (id) => {
+    sync?.assertIdle();
+    sync?.enqueue?.(id);
+  });
   const int = (n: unknown, min = 0) => {
     if (!Number.isSafeInteger(n) || Number(n) < min || Number(n) > 1000000)
       throw new Error("Invalid quantity or price.");
@@ -91,10 +100,12 @@ export function createShopStore(
       );
     const photo = String(body.photo || "");
     if (
-      photo && (
-        (!/^https:\/\//.test(photo) && !/^\/storage\/cards\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/i.test(photo)) ||
-        photo.length > 2000
-      )
+      photo &&
+      ((!/^https:\/\//.test(photo) &&
+        !/^\/storage\/cards\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/i.test(
+          photo,
+        )) ||
+        photo.length > 2000)
     )
       throw new Error("Photo must be an HTTPS URL or an uploaded card image.");
     const active = db
@@ -143,36 +154,43 @@ export function createShopStore(
     );
     if (sync?.enabled()) sync.request(id, quantity);
   });
-  const reserve = db.transaction((items: any, shipping: number) => {
-    sync?.assertIdle();
-    if (!Array.isArray(items) || !items.length || items.length > 50)
-      throw new Error("Choose between 1 and 50 different cards.");
-    const unique = new Set<number>(),
-      available = products();
-    const lines = items.map((item) => {
-      const id = int(item.id, 1),
-        quantity = int(item.quantity, 1);
-      if (unique.has(id)) throw new Error("Duplicate basket item.");
-      unique.add(id);
-      const product = available.find((c) => c.id === id);
-      if (!product?.price || quantity > product.available)
-        throw new Error("A card is no longer available in that quantity.");
-      return { ...product, quantity };
-    });
-    const id = randomUUID(),
-      total = lines.reduce((n, l) => n + l.price * l.quantity, int(shipping));
-    db.prepare(
-      "INSERT INTO shop_orders(id,status,total,shipping,created) VALUES (?,'pending',?,?,?)",
-    ).run(id, total, shipping, new Date().toISOString());
-    for (const l of lines)
-      db.prepare("INSERT INTO shop_order_items VALUES (?,?,?,?)").run(
-        id,
-        l.id,
-        l.quantity,
-        l.price,
-      );
-    return { id, total, lines };
-  });
+  const reserve = db.transaction(
+    (items: any, shipping: number, customerId?: number) => {
+      sync?.assertIdle();
+      if (!Array.isArray(items) || !items.length || items.length > 50)
+        throw new Error("Choose between 1 and 50 different cards.");
+      const unique = new Set<number>(),
+        available = products();
+      const lines = items.map((item) => {
+        const id = int(item.id, 1),
+          quantity = int(item.quantity, 1);
+        if (unique.has(id)) throw new Error("Duplicate basket item.");
+        unique.add(id);
+        const product = available.find((c) => c.id === id);
+        if (!product?.price || quantity > product.available)
+          throw new Error("A card is no longer available in that quantity.");
+        return { ...product, quantity };
+      });
+      const id = randomUUID(),
+        total = lines.reduce((n, l) => n + l.price * l.quantity, int(shipping));
+      db.prepare(
+        "INSERT INTO shop_orders(id,status,total,shipping,created) VALUES (?,'pending',?,?,?)",
+      ).run(id, total, shipping, new Date().toISOString());
+      if (customerId !== undefined) {
+        if (!Number.isSafeInteger(customerId) || customerId < 1)
+          throw new Error("Invalid customer.");
+        db.prepare("UPDATE shop_orders SET customer_id=? WHERE id=?").run(
+          customerId,
+          id,
+        );
+      }
+      for (const l of lines)
+        db.prepare(
+          "INSERT INTO shop_order_items(order_id,card_id,quantity,price) VALUES (?,?,?,?)",
+        ).run(id, l.id, l.quantity, l.price);
+      return { id, total, lines };
+    },
+  );
   const attach = (id: string, session: string) =>
     db
       .prepare(
@@ -214,6 +232,14 @@ export function createShopStore(
         date: new Date().toISOString().slice(0, 10),
         platform: "Website",
       });
+      const sale = db
+        .prepare(
+          "SELECT id FROM sales WHERE card_id=? ORDER BY id DESC LIMIT 1",
+        )
+        .get(l.card_id) as any;
+      db.prepare(
+        "UPDATE shop_order_items SET sale_id=? WHERE order_id=? AND card_id=?",
+      ).run(sale.id, order.id, l.card_id);
       db.prepare(
         "UPDATE shop_listings SET quantity=quantity-? WHERE card_id=?",
       ).run(l.quantity, l.card_id);
@@ -230,6 +256,11 @@ export function createShopStore(
       ),
       order.id,
     );
+    const paymentIntent =
+      typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id;
+    if (paymentIntent) support.bindPayment(order.id, paymentIntent);
   });
   const expire = (session: string) =>
     db
@@ -241,25 +272,65 @@ export function createShopStore(
   const order = (id: string) =>
     db.prepare("SELECT * FROM shop_orders WHERE id=?").get(id) as any;
   const orders = () =>
-    (db.prepare("SELECT * FROM shop_orders ORDER BY created DESC LIMIT 100").all() as any[])
-      .map((order) => ({
-        ...order,
-        items: db.prepare(
-          "SELECT i.card_id,i.quantity,i.price,c.player,c.number,c.variant FROM shop_order_items i JOIN cards c ON c.id=i.card_id WHERE i.order_id=?",
-        ).all(order.id),
-      }));
-  const dispatch = db.transaction((id: string, tracking: unknown) => {
-    const current = order(id);
-    if (!current || current.status !== "paid")
-      throw new Error("Only a paid order can be marked dispatched.");
-    const reference = typeof tracking === "string" ? tracking.trim() : "";
-    if (!reference || reference.length > 150)
-      throw new Error("Enter a tracking or postage reference (maximum 150 characters).");
-    if (!current.dispatched_at)
-      db.prepare("UPDATE shop_orders SET dispatched_at=?,tracking_reference=? WHERE id=?")
-        .run(new Date().toISOString(), reference, id);
-  });
+    (
+      db
+        .prepare("SELECT * FROM shop_orders ORDER BY created DESC LIMIT 100")
+        .all() as any[]
+    ).map((order) => ({
+      ...order,
+      ...support.refundSummary(order.id),
+      refunds: support.refunds(order.id),
+      returnRequest: support.details(order.id).returnRequest,
+      items: db
+        .prepare(
+          "SELECT i.card_id,i.quantity,i.price,i.returned,c.player,c.number,c.variant FROM shop_order_items i JOIN cards c ON c.id=i.card_id WHERE i.order_id=?",
+        )
+        .all(order.id),
+    }));
+  const dispatch = db.transaction(
+    (
+      id: string,
+      tracking: unknown,
+      carrier: unknown = "",
+      trackingUrl: unknown = "",
+    ) => {
+      const current = order(id);
+      if (
+        !current ||
+        current.status !== "paid" ||
+        support.refundSummary(id).refunded >= current.total
+      )
+        throw new Error("Only a paid order can be marked dispatched.");
+      const reference = typeof tracking === "string" ? tracking.trim() : "";
+      if (!reference || reference.length > 150)
+        throw new Error(
+          "Enter a tracking or postage reference (maximum 150 characters).",
+        );
+      const carrierName = typeof carrier === "string" ? carrier.trim() : "";
+      const url = typeof trackingUrl === "string" ? trackingUrl.trim() : "";
+      let validTrackingUrl = true;
+      if (url) {
+        try {
+          const parsed = new URL(url);
+          validTrackingUrl =
+            parsed.protocol === "https:" &&
+            !!parsed.hostname &&
+            !parsed.username &&
+            !parsed.password;
+        } catch {
+          validTrackingUrl = false;
+        }
+      }
+      if (carrierName.length > 100 || url.length > 2000 || !validTrackingUrl)
+        throw new Error("Use a carrier name and an HTTPS tracking URL.");
+      if (!current.dispatched_at)
+        db.prepare(
+          "UPDATE shop_orders SET dispatched_at=?,tracking_reference=?,carrier=?,tracking_url=? WHERE id=?",
+        ).run(new Date().toISOString(), reference, carrierName, url, id);
+    },
+  );
   return {
+    ...support,
     committed,
     products,
     publish,

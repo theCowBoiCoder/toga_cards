@@ -49,10 +49,10 @@ abstract class RecordsPage extends Page implements HasTable
 
     public function table(Table $table): Table
     {
-        return $table->records(function (?string $search, ?string $sortColumn, ?string $sortDirection, int $page, int $recordsPerPage, array $filters): LengthAwarePaginator {
+        return $table->records(function (?string $search, ?string $sortColumn, ?string $sortDirection, int $page, int $recordsPerPage, ?array $filters): LengthAwarePaginator {
             $this->client()->authorize();
             $rows = collect($this->sourceRows())->keyBy('id');
-            $rows = $this->filterRows($rows, $filters);
+            $rows = $this->filterRows($rows, $filters ?? []);
             if (filled($search)) {
                 $rows = $rows->filter(fn (array $row): bool => str_contains(mb_strtolower(implode(' ', array_filter($row, fn ($value): bool => is_scalar($value)))), mb_strtolower($search)));
             }

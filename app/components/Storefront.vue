@@ -24,7 +24,9 @@ const basketOpen = ref(false),
   busy = ref(false),
   notice = ref("");
 const basket = ref<Record<number, number>>({});
+const account = ref<{customer: {name:string}|null;csrf:string}|null>(null);
 onMounted(() => {
+  $fetch<any>('/account/session').then(value => {account.value=value;}).catch(() => {});
   try {
     const stored = JSON.parse(localStorage.getItem("toga-basket") || "{}");
     if (stored && typeof stored === "object" && !Array.isArray(stored))
@@ -125,8 +127,13 @@ async function checkout() {
   busy.value = true;
   notice.value = "";
   try {
-    const r = await $fetch<any>("/api/shop/checkout", {
+    const wasSignedIn = !!account.value?.customer;
+    account.value = await $fetch<any>('/account/session');
+    if (wasSignedIn && !account.value?.customer) throw new Error('Please sign in again before checking out.');
+    const signedIn = !!account.value?.customer;
+    const r = await $fetch<any>(signedIn ? '/account/checkout' : "/api/shop/checkout", {
       method: "POST",
+      ...(signedIn ? {headers:{'X-CSRF-TOKEN': account.value!.csrf, 'Accept':'application/json'}} : {}),
       body: {
         items: lines.value.map((l) => ({
           id: l.product.id,
@@ -136,7 +143,7 @@ async function checkout() {
     });
     window.location.assign(r.url);
   } catch (e: any) {
-    notice.value = e.data?.statusMessage || "Checkout could not be opened.";
+    notice.value = e.data?.statusMessage || e.data?.message || e.message || "Checkout could not be opened.";
     await refresh();
   } finally {
     busy.value = false;
@@ -165,6 +172,7 @@ const route = useRoute();
           >Complete your set</a
         ><a href="/#about">About Toga</a>
       </nav>
+      <a class="account-link" :href="account?.customer ? '/account/orders' : '/account/login'">{{ account?.customer ? 'My account' : 'Sign in' }}</a>
       <button class="basket-button" @click="basketOpen = true">
         <ShoppingBag :size="19" /><span>Basket</span><b>{{ count }}</b>
       </button>
@@ -409,6 +417,7 @@ const route = useRoute();
           </div>
         </div>
         <div v-if="lines.length" class="basket-totals">
+          <p v-if="!account?.customer" class="checkout-note"><a href="/account/login">Sign in or create an account</a> to save this order in your order history. Guest checkout is also available.</p>
           <p>
             Cards <strong>{{ money(total) }}</strong>
           </p>

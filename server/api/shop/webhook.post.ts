@@ -1,3 +1,4 @@
+import { synchronizeRefund } from "../../utils/refund-service";
 import { runStockSync } from "../../utils/stock-sync-service";
 import { stripeClient } from "../../utils/stripe";
 import { getInventory } from "../../utils/inventory";
@@ -27,6 +28,13 @@ export default defineEventHandler(async (event) => {
   if (notification.type === "checkout.session.completed")
     shop.complete(session);
   if (notification.type === "checkout.session.expired") shop.expire(session.id);
+  if (
+    ["refund.created", "refund.updated", "refund.failed"].includes(
+      notification.type,
+    )
+  ) {
+    await synchronizeRefund(session.id);
+  }
   if (getInventory().stockSync.enabled()) void runStockSync().catch(() => {});
   return { received: true };
 });

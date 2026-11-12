@@ -20,7 +20,7 @@ class Team extends RecordsPage
 
     protected function sourceRows(): array
     {
-        return User::query()->get(['id', 'name', 'email', 'is_admin', 'created_at'])->toArray();
+        return User::query()->where('account_type', 'staff')->get(['id', 'name', 'email', 'is_admin', 'created_at'])->toArray();
     }
 
     protected function columns(): array
@@ -46,7 +46,7 @@ class Team extends RecordsPage
             ->action(function (array $record): void {
                 $this->client()->authorize();
                 abort_if($record['id'] === auth()->id(), 403);
-                $user = User::findOrFail($record['id']);
+                $user = User::where('account_type', 'staff')->findOrFail($record['id']);
                 $user->update(['is_admin' => ! $user->is_admin]);
                 AuditEvent::create(['user_id' => auth()->id(), 'operation' => 'admin-account:access', 'parameters' => ['userId' => $user->id, 'enabled' => $user->is_admin], 'outcome' => 'succeeded']);
                 $this->resetTable();

@@ -141,7 +141,7 @@ try {
     db.prepare(
       "INSERT INTO shop_orders(id,status,session_id,total,shipping,created) VALUES (?,'pending',?,349,150,?)",
     ).run(id, session, new Date().toISOString());
-    db.prepare("INSERT INTO shop_order_items VALUES (?,?,1,199)").run(
+    db.prepare("INSERT INTO shop_order_items(order_id,card_id,quantity,price) VALUES (?,?,1,199)").run(
       id,
       card.id,
     );

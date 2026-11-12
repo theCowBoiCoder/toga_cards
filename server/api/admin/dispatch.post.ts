@@ -3,7 +3,7 @@ import { getInventory } from "../../utils/inventory";
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
   try {
-    getInventory().shop.dispatch(String(body?.orderId || ""), body?.tracking);
+    getInventory().shop.dispatch(String(body?.orderId || ""), body?.tracking, body?.carrier, body?.trackingUrl);
     return { saved: true };
   } catch (error) {
     throw createError({

@@ -48,6 +48,7 @@ export function createInventory(path: string) {
     request: (id, quantity) => stockSync.request(id, quantity),
     usable: (id) => stockSync.usable(id),
     sold: (id, quantity) => stockSync.sold(id, quantity),
+    enqueue: (id) => stockSync.enqueue(id),
   });
   const ebay = createEbayStore(db, cards);
   const stockSync = createStockSyncStore(db, cards);

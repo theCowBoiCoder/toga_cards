@@ -13,7 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
-        $middleware->redirectGuestsTo('/admin/login');
+        $middleware->redirectGuestsTo(fn (Request $request): string => $request->is('account', 'account/*') ? '/account/login' : '/admin/login');
         $middleware->encryptCookies(except: ['ebay_oauth_state']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

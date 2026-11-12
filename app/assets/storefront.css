@@ -25,6 +25,7 @@
 .wordmark .brand-monogram { display: grid; place-items: center; margin-right: 10px; width: 34px; height: 38px; border-radius: 5px; background: var(--accent); color: white; font-size: 24px; font-weight: 800; letter-spacing: -2px; }
 .shop-header nav { display: flex; gap: 28px; font-size: 13px; font-weight: 550; }
 .shop-header nav a:hover, .shop-footer > a:last-of-type:hover { color: var(--accent); }
+.account-link { font-size: 13px; font-weight: 550; white-space: nowrap; }
 .basket-button { display: flex; align-items: center; gap: 10px; padding: 10px 0 10px 20px; background: none; border: 0; border-left: 1px solid var(--line); color: var(--ink); }
 .basket-button b { min-width: 23px; height: 23px; padding: 0 5px; border-radius: 5px; background: #edf2fa; display: grid; place-items: center; font-size: 11px; }
 .store main { max-width: 1320px; margin: auto; border-top: 1px solid var(--line); }

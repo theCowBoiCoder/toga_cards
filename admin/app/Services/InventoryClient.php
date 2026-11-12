@@ -16,7 +16,7 @@ class InventoryClient
 {
     private array $responses = [];
 
-    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/ebay/action'];
+    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/ebay/action'];
 
     public function authorize(): void
     {
@@ -66,7 +66,7 @@ class InventoryClient
         if (! in_array($path, self::MUTATIONS, true)) {
             throw new AuthorizationException;
         }
-        $audit = AuditEvent::create(['user_id' => auth()->id(), 'operation' => $path.':'.($parameters['action'] ?? 'update'), 'parameters' => Arr::only($parameters, ['cardId', 'quantity', 'price', 'expectedStock', 'orderId', 'mode', 'key', 'unitCost', 'unitPrice', 'fees', 'date', 'platform', 'condition', 'enabled']), 'outcome' => 'pending']);
+        $audit = AuditEvent::create(['user_id' => auth()->id(), 'operation' => $path.':'.($parameters['action'] ?? 'update'), 'parameters' => Arr::only($parameters, ['cardId', 'quantity', 'price', 'expectedStock', 'orderId', 'amount', 'status', 'mode', 'key', 'unitCost', 'unitPrice', 'fees', 'date', 'platform', 'condition', 'enabled']), 'outcome' => 'pending']);
         try {
             $response = $this->request('POST', $path, $parameters);
         } catch (ValidationException $exception) {
@@ -90,6 +90,18 @@ class InventoryClient
             $message = $response->json('statusMessage');
             throw ValidationException::withMessages(['service' => is_string($message) ? mb_substr($message, 0, 300) : 'The inventory service rejected the request.']);
         }
+    }
+
+    public function customer(string $operation, array $data = []): array
+    {
+        $user = auth('customer')->user();
+        abort_unless($user && ! $user->is_admin && $user->account_type === 'customer', 403);
+        abort_unless(in_array($operation, ['orders', 'order', 'checkout', 'return', 'catalogue'], true), 403);
+        $response = $this->request('POST', '/api/admin/customer', [...$data, 'operation' => $operation, 'customerId' => $user->id, 'email' => $user->email]);
+        abort_if($response->status() === 404, 404);
+        $this->requireSuccess($response);
+
+        return $response->json();
     }
 
     public function export(string $kind): string
