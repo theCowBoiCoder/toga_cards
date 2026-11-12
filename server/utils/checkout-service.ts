@@ -3,16 +3,14 @@ import { stripeClient } from "./stripe";
 export async function startCheckout(
   items: unknown,
   customer?: { id: number; email: string },
+  shippingId?: unknown,
 ) {
-  const base = process.env.SHOP_URL,
-    shipping = Number(process.env.SHOP_SHIPPING_PENCE);
+  const base = process.env.SHOP_URL;
   if (
     process.env.TOGA_PREVIEW === "1" ||
     !base ||
     !process.env.STRIPE_SECRET_KEY ||
-    !process.env.STRIPE_WEBHOOK_SECRET ||
-    !Number.isSafeInteger(shipping) ||
-    shipping < 0
+    !process.env.STRIPE_WEBHOOK_SECRET
   )
     throw createError({
       statusCode: 503,
@@ -22,8 +20,10 @@ export async function startCheckout(
   const stripe = stripeClient(),
     shop = getInventory().shop;
   let order: ReturnType<typeof shop.reserve>;
+  let delivery: ReturnType<typeof shop.shipping.select>;
   try {
-    order = shop.reserve(items, shipping, customer?.id);
+    delivery = shop.shipping.select(shippingId);
+    order = shop.reserve(items, delivery.price, customer?.id, delivery.name);
   } catch (e) {
     throw createError({
       statusCode: 409,
@@ -51,8 +51,22 @@ export async function startCheckout(
           {
             shipping_rate_data: {
               type: "fixed_amount",
-              fixed_amount: { amount: shipping, currency: "gbp" },
-              display_name: "UK postage",
+              fixed_amount: { amount: delivery.price, currency: "gbp" },
+              display_name: delivery.name,
+              ...(delivery.min_days !== null
+                ? {
+                    delivery_estimate: {
+                      minimum: {
+                        unit: "business_day" as const,
+                        value: delivery.min_days,
+                      },
+                      maximum: {
+                        unit: "business_day" as const,
+                        value: delivery.max_days,
+                      },
+                    },
+                  }
+                : {}),
             },
           },
         ],

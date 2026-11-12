@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { createShippingStore } from "./shipping-store";
 import { randomUUID } from "node:crypto";
 import { createOrderSupport } from "./order-support";
 
@@ -26,6 +27,21 @@ export function createShopStore(
     db.exec(
       "ALTER TABLE shop_orders ADD COLUMN tracking_reference TEXT NOT NULL DEFAULT ''",
     );
+  const shipping = createShippingStore(db);
+  const legacyShipping = process.env.SHOP_SHIPPING_PENCE;
+  if (
+    !shipping.all().length &&
+    legacyShipping?.trim() &&
+    Number.isSafeInteger(Number(legacyShipping)) &&
+    Number(legacyShipping) >= 0
+  ) {
+    shipping.save({
+      id: "legacy-standard",
+      name: "Standard UK delivery",
+      price: Number(legacyShipping),
+      enabled: true,
+    });
+  }
   const support = createOrderSupport(db, (id) => {
     sync?.assertIdle();
   });
@@ -108,7 +124,12 @@ export function createShopStore(
     sync?.request(id, quantity);
   });
   const reserve = db.transaction(
-    (items: any, shipping: number, customerId?: number) => {
+    (
+      items: any,
+      shipping: number,
+      customerId?: number,
+      shippingMethod = "",
+    ) => {
       sync?.assertIdle();
       if (!Array.isArray(items) || !items.length || items.length > 50)
         throw new Error("Choose between 1 and 50 different cards.");
@@ -129,6 +150,10 @@ export function createShopStore(
       db.prepare(
         "INSERT INTO shop_orders(id,status,total,shipping,created) VALUES (?,'pending',?,?,?)",
       ).run(id, total, shipping, new Date().toISOString());
+      db.prepare("UPDATE shop_orders SET shipping_method=? WHERE id=?").run(
+        shippingMethod,
+        id,
+      );
       if (customerId !== undefined) {
         if (!Number.isSafeInteger(customerId) || customerId < 1)
           throw new Error("Invalid customer.");
@@ -284,6 +309,7 @@ export function createShopStore(
   );
   return {
     ...support,
+    shipping,
     committed,
     products,
     publish,

@@ -6,7 +6,7 @@
             <li>{{ $item['quantity'] }} × {{ $item['player'] }} #{{ $item['number'] }} · {{ $item['variant'] }} · £{{ number_format($item['price'] / 100, 2) }} each</li>
         @endforeach
     </ul>
-    <p>Postage charged: £{{ number_format($order['shipping'] / 100, 2) }}</p>
+    <p>{{ ($order['shipping_method'] ?? '') ?: 'Postage' }} charged: £{{ number_format($order['shipping'] / 100, 2) }}</p>
     <p>Total: £{{ number_format($order['total'] / 100, 2) }}</p>
     <h4>Delivery details</h4>
     @php($delivery = json_decode($order['address'] ?? '{}', true) ?? [])

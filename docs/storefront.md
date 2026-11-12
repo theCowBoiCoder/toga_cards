@@ -18,7 +18,7 @@ This uses a separate database, labels stock as demonstration data, disables chec
 
 ## Stripe setup
 
-Copy the empty variables from `.env.example` into the local `.env`; keep keys out of Git and chat. Start with Stripe **test** credentials. Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SHOP_URL` (exact trusted origin) and `SHOP_SHIPPING_PENCE` (actual UK postage, integer pence; explicitly use `0` for free postage). Restart after configuration changes. Unset `TOGA_PREVIEW` for test payments against a dedicated test database.
+Copy the empty variables from `.env.example` into the local `.env`; keep keys out of Git and chat. Start with Stripe **test** credentials. Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SHOP_URL` (exact trusted origin) and `SHOP_SHIPPING_PENCE` (optional legacy UK postage, integer pence; `0` means free postage). Restart after configuration changes. Unset `TOGA_PREVIEW` for test payments against a dedicated test database.
 
 Forward Stripe test events with:
 
@@ -63,3 +63,9 @@ In **Orders**, staff can record a carrier, reference and HTTPS tracking link. Cu
 Use **Open return** for guest orders, then approve/decline, record receipt, and restore only inspected copies. The restock form accepts the cumulative total received for that order line, making repeated submissions safe. Stock cost is restored from the original recorded sale; historical orders without that link need a reviewed physical count instead. Refund records are separate from immutable sales, so gross sales reports are not net-of-refund profit reports.
 
 Password resets use Laravel's single-use email tokens. Configure `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` and `MAIL_FROM_NAME` in `/etc/toga-cards/runtime.env`, then recreate the container. With the default log mailer, reset links are not generated or logged; the customer sees that email delivery is unavailable. No SMTP credentials or Stripe live tests were assumed by this feature.
+
+## Delivery options
+
+Use **Admin → Delivery options** to add delivery service names, prices per order and optional minimum/maximum working-day estimates. Enable only services with prices you are ready to offer. Customers choose a service in the basket before Stripe checkout; the server retrieves its current price and stores the service name and amount on the order. Editing or disabling a service does not rewrite an existing order or checkout reservation. Shipping is currently UK-only.
+
+A valid existing `SHOP_SHIPPING_PENCE` creates one Standard UK delivery option on upgrade if no options exist. New installations can leave that variable blank and create their options in admin. Stripe checkout stays unavailable until at least one delivery option is enabled and Stripe credentials are configured.

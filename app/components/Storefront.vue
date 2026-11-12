@@ -14,6 +14,9 @@ import {
 const props = defineProps<{ shopPage?: boolean }>();
 const { data, refresh } = await useFetch<any>("/api/shop/catalogue");
 const products = computed<any[]>(() => data.value?.products || []);
+const shippingId = ref('');
+const shippingOptions = computed<any[]>(() => data.value?.shippingOptions || []);
+const delivery = computed(() => shippingOptions.value.find(option => option.id === shippingId.value) || shippingOptions.value[0]);
 const search = ref(""),
   club = ref(""),
   variant = ref(""),
@@ -135,6 +138,7 @@ async function checkout() {
       method: "POST",
       ...(signedIn ? {headers:{'X-CSRF-TOKEN': account.value!.csrf, 'Accept':'application/json'}} : {}),
       body: {
+        shippingId: delivery.value?.id,
         items: lines.value.map((l) => ({
           id: l.product.id,
           quantity: l.quantity,
@@ -418,17 +422,23 @@ const route = useRoute();
         </div>
         <div v-if="lines.length" class="basket-totals">
           <p v-if="!account?.customer" class="checkout-note"><a href="/account/login">Sign in or create an account</a> to save this order in your order history. Guest checkout is also available.</p>
+          <label v-if="shippingOptions.length" class="delivery-choice">Delivery option
+            <select :value="delivery?.id" aria-label="Delivery option" @change="shippingId = ($event.target as HTMLSelectElement).value">
+              <option v-for="option in shippingOptions" :key="option.id" :value="option.id">{{ option.name }} · {{ money(option.price) }}</option>
+            </select>
+            <small v-if="delivery?.min_days">Estimated {{ delivery.min_days }}–{{ delivery.max_days }} working days</small>
+          </label>
           <p>
             Cards <strong>{{ money(total) }}</strong>
           </p>
           <p>
-            UK postage
+            Delivery
             <strong>{{
-              data?.checkoutReady ? money(data.shipping) : "To be configured"
+              delivery ? money(delivery.price) : "Choose delivery"
             }}</strong>
           </p>
-          <p v-if="data?.checkoutReady">
-            Total <strong>{{ money(total + data.shipping) }}</strong>
+          <p v-if="delivery">
+            Total <strong>{{ money(total + (delivery?.price || 0)) }}</strong>
           </p>
           <button
             class="orange-button"
@@ -439,7 +449,7 @@ const route = useRoute();
             }}<ArrowRight :size="18" />
           </button>
           <p v-if="!data?.checkoutReady" class="checkout-note">
-            Payments are not enabled in this preview. Your basket is saved on
+            Checkout is temporarily unavailable. Your basket is saved on
             this device.
           </p>
           <p v-if="notice" role="alert" class="basket-error">{{ notice }}</p>

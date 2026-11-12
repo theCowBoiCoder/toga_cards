@@ -10,6 +10,7 @@ export function createOrderSupport(
     ),
   );
   for (const [name, definition] of Object.entries({
+    shipping_method: "TEXT NOT NULL DEFAULT ''",
     customer_id: "INTEGER",
     payment_intent: "TEXT",
     carrier: "TEXT NOT NULL DEFAULT ''",

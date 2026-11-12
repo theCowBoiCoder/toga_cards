@@ -20,7 +20,11 @@ export default defineEventHandler(async (event) => {
       case "checkout":
         if (typeof body.email !== "string" || !body.email.includes("@"))
           throw new Error("Invalid customer email.");
-        return await startCheckout(body.items, { id, email: body.email });
+        return await startCheckout(
+          body.items,
+          { id, email: body.email },
+          body.shippingId,
+        );
       default:
         throw new Error("Unsupported customer operation.");
     }

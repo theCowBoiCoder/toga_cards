@@ -22,7 +22,7 @@ class CustomerOrdersController extends Controller
 
     public function checkout(Request $request, InventoryClient $client): JsonResponse
     {
-        $data = $request->validate(['items' => 'required|array|min:1|max:50', 'items.*.id' => 'required|integer|min:1', 'items.*.quantity' => 'required|integer|min:1|max:10000']);
+        $data = $request->validate(['shippingId' => 'nullable|string|max:100', 'items' => 'required|array|min:1|max:50', 'items.*.id' => 'required|integer|min:1', 'items.*.quantity' => 'required|integer|min:1|max:10000']);
 
         return response()->json($client->customer('checkout', $data));
     }

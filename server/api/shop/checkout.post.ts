@@ -5,5 +5,6 @@ export default defineEventHandler(async (event) => {
       statusCode: 403,
       statusMessage: "Same-origin request required.",
     });
-  return startCheckout((await readBody(event))?.items);
+  const body = await readBody(event);
+  return startCheckout(body?.items, undefined, body?.shippingId);
 });

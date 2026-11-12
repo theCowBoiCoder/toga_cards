@@ -1,6 +1,7 @@
 import { getInventory } from "../../utils/inventory";
 export default defineEventHandler((event) => {
   setHeader(event, "Cache-Control", "no-store");
+  const options = getInventory().shop.shipping.available();
   return {
     demo: process.env.TOGA_PREVIEW === "1",
     products: getInventory().shop.products(),
@@ -10,8 +11,9 @@ export default defineEventHandler((event) => {
         process.env.STRIPE_SECRET_KEY &&
         process.env.STRIPE_WEBHOOK_SECRET &&
         process.env.SHOP_URL &&
-        process.env.SHOP_SHIPPING_PENCE
+        options.length
       ),
-    shipping: Number(process.env.SHOP_SHIPPING_PENCE || 0),
+    shipping: options[0]?.price ?? 0,
+    shippingOptions: options,
   };
 });

@@ -16,7 +16,7 @@ class InventoryClient
 {
     private array $responses = [];
 
-    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/ebay/action'];
+    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/admin/shipping', '/api/ebay/action'];
 
     public function authorize(): void
     {
@@ -48,7 +48,7 @@ class InventoryClient
     public function get(string $path): array
     {
         $this->authorize();
-        if (! in_array($path, ['/api/inventory', '/api/admin/shop', '/api/ebay'], true)) {
+        if (! in_array($path, ['/api/inventory', '/api/admin/shop', '/api/admin/shipping', '/api/ebay'], true)) {
             throw new AuthorizationException;
         }
         if (! isset($this->responses[$path])) {

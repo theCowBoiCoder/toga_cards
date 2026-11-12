@@ -112,7 +112,7 @@
 .basket-totals { margin-top: 25px; }
 .basket-totals > p { display: flex; justify-content: space-between; font-size: 13px; }
 .basket-totals .orange-button { width: 100%; }
-.basket-totals .checkout-note { font-size: 12px; line-height: 1.7; color: var(--muted); }
+.basket-totals .checkout-note { display: block; font-size: 12px; line-height: 1.7; color: var(--muted); }
 .basket-error { color: #ac3029 !important; font-size: 12px; line-height: 1.6; }
 .shop-message { padding: 16px; background: #edf3fd; color: var(--ink); font-size: 13px; text-align: center; }
 @media (min-width: 1200px) { .hero-art { min-height: 430px; } }
@@ -173,3 +173,6 @@
   .basket-drawer { padding: 22px; }
 }
 @media (prefers-reduced-motion: reduce) { .store * { transition: none !important; } }
+
+.store .delivery-choice { display: grid; gap: 8px; margin-bottom: 22px; font-size: 13px; }
+.delivery-choice small { color: var(--muted); font-weight: 400; }
