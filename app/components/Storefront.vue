@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { combinedPostage } from "#shared/shipping";
 import {
   ArrowUpRight,
   ArrowRight,
@@ -15,7 +16,10 @@ const props = defineProps<{ shopPage?: boolean }>();
 const { data, refresh } = await useFetch<any>("/api/shop/catalogue");
 const products = computed<any[]>(() => data.value?.products || []);
 const shippingId = ref('');
-const shippingOptions = computed<any[]>(() => data.value?.shippingOptions || []);
+const shippingOptions = computed<any[]>(() => (data.value?.shippingOptions || [])
+  .map((option: any) => ({ ...option, price: combinedPostage(option, count.value) }))
+  .filter((option: any) => option.price !== null)
+  .sort((a: any, b: any) => a.price - b.price));
 const delivery = computed(() => shippingOptions.value.find(option => option.id === shippingId.value) || shippingOptions.value[0]);
 const search = ref(""),
   club = ref(""),
@@ -431,6 +435,8 @@ const route = useRoute();
           <p>
             Cards <strong>{{ money(total) }}</strong>
           </p>
+          <p class="checkout-note" aria-live="polite">Combined postage for {{ count }} {{ count === 1 ? 'card' : 'cards' }}. Packaging included.</p>
+          <p v-if="!shippingOptions.length && data?.shippingOptions?.length" role="alert" class="basket-error">Please contact us for a postage quote for this basket size.</p>
           <p>
             Delivery
             <strong>{{
@@ -442,7 +448,7 @@ const route = useRoute();
           </p>
           <button
             class="orange-button"
-            :disabled="!valid || !data?.checkoutReady || busy"
+            :disabled="!valid || !delivery || !data?.checkoutReady || busy"
             @click="checkout"
           >
             {{ busy ? "Opening Stripe…" : "Checkout with Stripe"

@@ -1,5 +1,13 @@
 # Toga Cards storefront prototype
 
+## Combined Royal Mail postage
+
+Admin → Delivery options lets staff edit each service's postage bands, card-count limits, packaging allowance and enablement. Prices are entered in pounds. A band charges once for the entire basket, counting all copies across all card designs; packaging is added once. No band means the existing flat-rate behaviour. Baskets above the final band need a manual quote. Both guest and signed-in checkout recalculate postage on the server and retain the selected name and final charge on the order.
+
+If there are no delivery services at startup, Royal Mail 2nd Class and 1st Class are added. Existing options are never overwritten. Starter bands reflect one protected holder per card, with multiple cards grouped into one parcel: 1 card uses Large Letter up to 100g; 2–100 cards use Small Parcel up to 2kg. These quantity limits are estimates, not measured weights: verify your actual packed orders (including holders and mailer) fit the Royal Mail format and reduce the limit if necessary. Slabs and unusually heavy cards need separate review.
+
+Starter online postage prices are 2nd Class £1.55/£4.40 and 1st Class £3.20/£5.70, with an editable £0.50 packaging allowance per order. Customer totals are therefore £2.05/£4.90 and £3.70/£6.20. Source: [Royal Mail online price guide, effective 5 October 2026](https://www.royalmail.com/sites/royalmail.com/files/2026-10/online-price-guide-october-2026-v1.pdf), UK Standard, page 6. These are online purchase prices, not Post Office counter prices; collection fees are not included. Rates are stored locally and require manual updates when Royal Mail changes prices. No labels are purchased automatically.
+
 The existing Nuxt application now serves `/` (homepage), `/shop` (catalogue and basket) and `/admin` (Laravel/Filament inventory, sales, eBay tools, website listings, orders, dispatch, staff and audit history). Nothing has been deployed or applied to live eBay listings by this change.
 
 ## Preview and development

@@ -1,5 +1,6 @@
 import { getInventory } from "./inventory";
 import { stripeClient } from "./stripe";
+import { basketCardCount } from "../../shared/shipping";
 export async function startCheckout(
   items: unknown,
   customer?: { id: number; email: string },
@@ -22,7 +23,7 @@ export async function startCheckout(
   let order: ReturnType<typeof shop.reserve>;
   let delivery: ReturnType<typeof shop.shipping.select>;
   try {
-    delivery = shop.shipping.select(shippingId);
+    delivery = shop.shipping.select(shippingId, basketCardCount(items));
     order = shop.reserve(items, delivery.price, customer?.id, delivery.name);
   } catch (e) {
     throw createError({

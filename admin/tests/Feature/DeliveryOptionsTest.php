@@ -14,6 +14,20 @@ class DeliveryOptionsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_staff_can_save_combined_postage_bands_and_packaging_in_pence(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true, 'account_type' => 'staff']));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Http::preventStrayRequests();
+        Http::fake(['http://127.0.0.1:3001/api/admin/shipping' => Http::response(['options' => [['id' => 'second', 'name' => 'Royal Mail 2nd Class', 'price' => 155, 'packaging' => 50, 'bands' => [['upToCards' => 1, 'price' => 155], ['upToCards' => 100, 'price' => 440]], 'min_days' => null, 'max_days' => null, 'enabled' => 1]]])]);
+        Livewire::test(Delivery::class)->callTableAction('editDelivery', 'second', data: [
+            'name' => 'Royal Mail 2nd Class', 'price' => 1.55, 'packaging' => 0.75,
+            'bands' => [['upToCards' => 1, 'price' => 1.60], ['upToCards' => 50, 'price' => 4.50]],
+            'minDays' => null, 'maxDays' => null, 'enabled' => true,
+        ])->assertHasNoTableActionErrors();
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST' && $request['id'] === 'second' && $request['packaging'] === 75 && $request['bands'] === [['upToCards' => 1, 'price' => 160], ['upToCards' => 50, 'price' => 450]]);
+    }
+
     public function test_staff_can_create_and_edit_delivery_services_with_prices_in_pence(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => true, 'account_type' => 'staff']));
