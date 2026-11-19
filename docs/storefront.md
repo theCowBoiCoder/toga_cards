@@ -48,6 +48,14 @@ Test successful payment, duplicate webhook, expiry, mismatched payment, competin
 
 ## Stock model and eBay
 
+### Website singles and SKUs
+
+In **Cards & stock**, use **List single on website** for a card with physical stock. Enter its price per card, choose how many confirmed copies to offer, assess condition and add a photo. Each unit is one card; offering several copies does not create a bundle. Existing singles show **Edit shop** instead. The same action is available on **eBay listings** after matching a listing to its exact single inventory card; unmatched listings must be matched first.
+
+The server creates a website listing only if that inventory card has no listing. Repeating a create request reuses the existing listing without replacing its price, photo or quantity. Explicit **Edit shop** remains available to change it or take it off sale. Singles get an automatic unique SKU such as `TC-S-000123`, based on their inventory identity. Existing website listings receive SKUs on upgrade without changing stock, prices or photos. A SKU stays the same when the card is edited, taken off sale or restocked. Different inventory cards/variants have different SKUs.
+
+The website SKU is shown in admin, on the storefront and in the basket, and can be searched in the shop. It is captured on order lines, checkout product details, staff order details and customer order confirmations. It is distinct from the eBay listing's SKU; this action does not modify eBay SKUs or publish/change eBay listings. Matching and stock confirmation still require seller review so bundles or variations are not guessed into singles.
+
 The website inventory ledger is authoritative. Confirmed website quantities become available immediately at the saved price, capped by physical stock and reduced by pending checkout holds. eBay connection errors, stale checks and unmatched listings do not hide website stock. Existing confirmed website quantities previously staged behind eBay verification are carried forward on upgrade; prices and physical counts are preserved.
 
 Use **Cards & stock → Update eBay stock** for the card you want to update. This is a one-off action: only that card’s linked eBay quantities are updated from its current website availability, and the result is verified with GetItem. Updates can reduce or replenish quantity. Prices, titles and postage policies stay unchanged. If several listings are linked to one card, the first in stable listing-key order receives the quantity and the others are set to zero; the confirmation explains this before applying it.

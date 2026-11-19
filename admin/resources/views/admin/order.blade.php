@@ -20,7 +20,7 @@
                 @forelse ($items as $item)
                     <div class="tc-order-item">
                         <div class="tc-item-number" aria-hidden="true">#{{ $item['number'] }}</div>
-                        <div class="tc-item-description"><strong>{{ $item['player'] }}</strong><span class="tc-muted">#{{ $item['number'] }} · {{ $item['variant'] }}</span><span class="tc-muted">{{ $item['quantity'] }} × £{{ number_format($item['price'] / 100, 2) }}</span></div>
+                        <div class="tc-item-description"><strong>{{ $item['player'] }}</strong><span class="tc-muted">#{{ $item['number'] }} · {{ $item['variant'] }}</span>@if(! empty($item['sku']))<span class="tc-muted">SKU: {{ $item['sku'] }}</span>@endif<span class="tc-muted">{{ $item['quantity'] }} × £{{ number_format($item['price'] / 100, 2) }}</span></div>
                         <strong class="tc-amount">£{{ number_format(($item['price'] * $item['quantity']) / 100, 2) }}</strong>
                     </div>
                 @empty

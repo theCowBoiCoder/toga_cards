@@ -69,7 +69,8 @@ export async function startCheckout(
             unit_amount: l.price,
             product_data: {
               name: `${l.player} #${l.number} · ${l.variant}`,
-              description: `${l.collection} ${l.season} · ${l.condition}`,
+              description: `${l.collection} ${l.season} · ${l.condition}${l.sku ? ` · SKU ${l.sku}` : ""}`,
+              ...(l.sku ? { metadata: { sku: l.sku } } : {}),
             },
           },
         })),

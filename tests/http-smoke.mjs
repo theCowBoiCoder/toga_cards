@@ -135,12 +135,23 @@ try {
   assert.deepEqual(Object.keys(health).sort(), ['ok','revision']);
   const inventory = await request("/api/inventory");
   const card = inventory.cards.find((c) => c.player === "Smoke fixture");
-  await request("/api/admin/shop", {
+  const single = await request("/api/admin/shop", {
+    action: "create-single",
     cardId: card.id,
     quantity: 2,
     price: 199,
     stockConfirmed: true,
   });
+  assert.equal(single.created, true);
+  assert.match(single.sku, /^TC-S-\d{6,}$/);
+  const duplicateSingle = await request("/api/admin/shop", {
+    action: "create-single", cardId: card.id, quantity: 99, price: 999,
+  });
+  assert.equal(duplicateSingle.created, false);
+  assert.equal(duplicateSingle.sku, single.sku);
+  const singleProduct = (await request("/api/admin/shop")).products.find((product) => product.id === card.id);
+  assert.equal(singleProduct.price, 199);
+  assert.equal(singleProduct.available, 2);
   const proxied = await fetch(origin + '/api/admin/shop', {
     method:'POST',headers:{authorization,Origin:origin.replace('http:','https:'),'X-Forwarded-Proto':'https','Content-Type':'application/json'},
     body:JSON.stringify({cardId:card.id,quantity:2,price:199,stockConfirmed:true}),

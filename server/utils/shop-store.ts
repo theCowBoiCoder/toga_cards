@@ -19,6 +19,12 @@ export function createShopStore(
     CREATE TABLE IF NOT EXISTS shop_settings (id INTEGER PRIMARY KEY CHECK (id = 1), in_stock_only INTEGER NOT NULL CHECK (in_stock_only IN (0, 1)));
     CREATE TABLE IF NOT EXISTS shop_orders (id TEXT PRIMARY KEY, status TEXT NOT NULL, session_id TEXT UNIQUE, total INTEGER NOT NULL, shipping INTEGER NOT NULL, created TEXT NOT NULL, email TEXT, address TEXT);
     CREATE TABLE IF NOT EXISTS shop_order_items (order_id TEXT NOT NULL REFERENCES shop_orders(id), card_id INTEGER NOT NULL REFERENCES cards(id), quantity INTEGER NOT NULL, price INTEGER NOT NULL, PRIMARY KEY(order_id,card_id));`);
+  db.exec(`CREATE TABLE IF NOT EXISTS shop_skus (card_id INTEGER PRIMARY KEY REFERENCES cards(id), sku TEXT NOT NULL COLLATE NOCASE UNIQUE);
+    INSERT OR IGNORE INTO shop_skus(card_id,sku) SELECT card_id,printf('TC-S-%06d',card_id) FROM shop_listings;`);
+  const itemColumns = db.prepare("PRAGMA table_info(shop_order_items)").all() as { name: string }[];
+  if (!itemColumns.some((column) => column.name === "sku"))
+    db.exec("ALTER TABLE shop_order_items ADD COLUMN sku TEXT NOT NULL DEFAULT ''");
+  db.exec(`UPDATE shop_order_items SET sku=COALESCE((SELECT sku FROM shop_skus WHERE card_id=shop_order_items.card_id),'') WHERE sku=''`);
   const orderColumns = new Set(
     (
       db.prepare("PRAGMA table_info(shop_orders)").all() as { name: string }[]
@@ -70,11 +76,12 @@ export function createShopStore(
         .get(id) as any
     ).n;
   function products() {
-    const listings = db.prepare("SELECT * FROM shop_listings").all() as any[];
+    const listings = db.prepare("SELECT l.*,s.sku FROM shop_listings l LEFT JOIN shop_skus s ON s.card_id=l.card_id").all() as any[];
     return cards().map((c) => {
       const l = listings.find((l) => l.card_id === c.id);
       return {
         id: c.id,
+        sku: l?.sku || `TC-S-${String(c.id).padStart(6, "0")}`,
         player: c.player,
         club: c.club,
         number: c.number,
@@ -139,9 +146,18 @@ export function createShopStore(
       throw new Error("Photo must be an HTTPS URL or an uploaded card image.");
     db.prepare("UPDATE cards SET condition=? WHERE id=?").run(condition, id);
     db.prepare(
-      "INSERT INTO shop_listings VALUES (?,?,?,?) ON CONFLICT(card_id) DO UPDATE SET price=excluded.price,quantity=excluded.quantity,photo=excluded.photo",
+      "INSERT INTO shop_listings(card_id,price,quantity,photo) VALUES (?,?,?,?) ON CONFLICT(card_id) DO UPDATE SET price=excluded.price,quantity=excluded.quantity,photo=excluded.photo",
     ).run(id, price, quantity, photo);
+    db.prepare("INSERT OR IGNORE INTO shop_skus(card_id,sku) VALUES (?,?)").run(id, `TC-S-${String(id).padStart(6, "0")}`);
     sync?.request(id, quantity);
+  });
+  const ensureSingle = db.transaction((body: any) => {
+    const id = int(body.cardId, 1);
+    const existing = db.prepare("SELECT l.*,s.sku FROM shop_listings l LEFT JOIN shop_skus s ON s.card_id=l.card_id WHERE l.card_id=?").get(id) as any;
+    if (existing) return { created: false, sku: existing.sku };
+    int(body.quantity, 1);
+    publish(body);
+    return { created: true, sku: `TC-S-${String(id).padStart(6, "0")}` };
   });
   const reserve = db.transaction(
     (
@@ -184,8 +200,8 @@ export function createShopStore(
       }
       for (const l of lines)
         db.prepare(
-          "INSERT INTO shop_order_items(order_id,card_id,quantity,price) VALUES (?,?,?,?)",
-        ).run(id, l.id, l.quantity, l.price);
+          "INSERT INTO shop_order_items(order_id,card_id,quantity,price,sku) VALUES (?,?,?,?,?)",
+        ).run(id, l.id, l.quantity, l.price, l.sku);
       return { id, total, lines };
     },
   );
@@ -269,7 +285,7 @@ export function createShopStore(
         "UPDATE shop_orders SET status='expired' WHERE session_id=? AND status='pending'",
       )
       .run(session);
-  const listings = () => db.prepare("SELECT * FROM shop_listings").all();
+  const listings = () => db.prepare("SELECT l.*,s.sku FROM shop_listings l LEFT JOIN shop_skus s ON s.card_id=l.card_id").all();
   const order = (id: string) =>
     db.prepare("SELECT * FROM shop_orders WHERE id=?").get(id) as any;
   const orders = () =>
@@ -284,7 +300,7 @@ export function createShopStore(
       returnRequest: support.details(order.id).returnRequest,
       items: db
         .prepare(
-          "SELECT i.card_id,i.quantity,i.price,i.returned,c.player,c.number,c.variant FROM shop_order_items i JOIN cards c ON c.id=i.card_id WHERE i.order_id=?",
+          "SELECT i.card_id,i.quantity,i.price,i.returned,i.sku,c.player,c.number,c.variant FROM shop_order_items i JOIN cards c ON c.id=i.card_id WHERE i.order_id=?",
         )
         .all(order.id),
     }));
@@ -343,6 +359,7 @@ export function createShopStore(
     setInStockOnly,
     publicCatalogue,
     publish,
+    ensureSingle,
     reserve,
     attach,
     release,

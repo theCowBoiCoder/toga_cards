@@ -2,11 +2,8 @@
 
 namespace App\Filament\Pages;
 
-use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -19,6 +16,8 @@ use Illuminate\Support\Collection;
 
 class Inventory extends RecordsPage
 {
+    use Concerns\ManagesWebsiteListing;
+
     protected static string|\UnitEnum|null $navigationGroup = 'Shop management';
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-square-3-stack-3d';
@@ -86,7 +85,8 @@ class Inventory extends RecordsPage
                     default => 'Unavailable',
                 };
 
-                return [...$card, 'price' => $price, 'photo' => $product['photo'] ?? '',
+                return [...$card, 'shop_card_id' => $card['id'], 'shop_listed' => isset($listings[$card['id']]),
+                    'website_sku' => $product['sku'] ?? null, 'price' => $price, 'photo' => $product['photo'] ?? '',
                     'requested' => $requested, 'allocated' => $allocated, 'available' => $available,
                     'website_status' => $status];
             })->all();
@@ -96,6 +96,7 @@ class Inventory extends RecordsPage
     {
         return [
             TextColumn::make('number')->label('#')->sortable(),
+            TextColumn::make('website_sku')->label('SKU')->copyable()->placeholder('Assigned on listing'),
             TextColumn::make('player')->sortable()->wrap()
                 ->description(fn (array $record): string => $record['variant'].' · '.$record['condition']),
             TextColumn::make('club')->sortable()->toggleable(isToggledHiddenByDefault: true),
@@ -128,44 +129,6 @@ class Inventory extends RecordsPage
                 ->action(fn (array $record) => $this->perform('/api/admin/stock-sync', ['action' => 'sync', 'cardIds' => [$record['id']]], 'Selected eBay stock updated')),
             ActionGroup::make($this->stockActions())->label('Stock')->button()->color('gray'),
         ];
-    }
-
-    protected function shopAction(): Action
-    {
-        return $this->adminAction('listing')->label('Edit shop')
-            ->modalHeading(fn (array $record): string => $record['player'].' #'.$record['number'].' · Shop details')
-            ->modalDescription(fn (array $record): string => 'You own '.$record['stock'].' copies. Set their selling details here; use Stock to receive or count copies.')
-            ->fillForm(fn (array $record): array => [
-                'price' => $record['price'] === null ? null : $record['price'] / 100,
-                'quantity' => $record['requested'],
-                'condition' => $record['condition'],
-                'photo_url' => str_starts_with($record['photo'], 'https://') ? $record['photo'] : '',
-                'image' => str_starts_with($record['photo'], '/storage/') ? substr($record['photo'], 9) : null,
-                'stockConfirmed' => false,
-            ])
-            ->schema([
-                $this->moneyInput('price', 'Selling price per card')->minValue(0.50),
-                TextInput::make('quantity')->label('Copies to sell on the website')->integer()->minValue(0)
-                    ->maxValue(fn (array $record): int => $record['stock'])->required()
-                    ->helperText('Choose copies from your owned stock. Set 0 to stop offering this card. Confirmed copies become available immediately. Update eBay separately when you choose.'),
-                Select::make('condition')->options(array_combine(
-                    ['Not assessed', 'Near mint', 'Excellent', 'Very good', 'Good', 'Poor'],
-                    ['Not assessed', 'Near mint', 'Excellent', 'Very good', 'Good', 'Poor'],
-                ))->required(),
-                FileUpload::make('image')->label('Card photo')->image()
-                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])->maxSize(5120)
-                    ->disk('public')->directory('cards')->visibility('public'),
-                TextInput::make('photo_url')->label('Or use a hosted HTTPS photo')->url()->maxLength(2000),
-                Checkbox::make('stockConfirmed')->label('I have counted these physical copies and assessed their condition.'),
-            ])
-            ->action(function (array $data, array $record): void {
-                $photo = filled($data['image'] ?? null) ? '/storage/'.$data['image'] : ($data['photo_url'] ?? '');
-                $this->perform('/api/admin/shop', [
-                    'cardId' => $record['id'], 'price' => $this->pence($data['price']),
-                    'quantity' => $data['quantity'], 'condition' => $data['condition'],
-                    'photo' => $photo, 'stockConfirmed' => $data['stockConfirmed'],
-                ], 'Shop details saved; website stock updated');
-            });
     }
 
     protected function getHeaderActions(): array

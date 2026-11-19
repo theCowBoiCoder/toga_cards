@@ -73,7 +73,7 @@ const results = computed(() => {
     .filter(
       (c) =>
         (!q ||
-          `${c.player} ${c.club} ${c.number} ${c.variant}`
+          `${c.player} ${c.club} ${c.number} ${c.variant} ${c.sku || ""}`
             .toLowerCase()
             .includes(q) ||
           numbers.includes(c.number.toLowerCase())) &&
@@ -340,6 +340,7 @@ async function cancelReturnedCheckout() {
               {{ c.club }} <span>#{{ c.number }}</span>
             </div>
             <h3>{{ c.player }}</h3>
+            <small v-if="c.price && c.sku">SKU: {{ c.sku }}</small>
             <p>{{ c.collection }} · {{ c.season }}</p>
             <div class="product-bottom">
               <strong
@@ -436,6 +437,7 @@ async function cancelReturnedCheckout() {
           <div>
             <strong>{{ l.product.player }}</strong>
             <p>#{{ l.product.number }} · {{ l.product.variant }}</p>
+            <small v-if="l.product.sku">SKU: {{ l.product.sku }}</small>
             <small>{{ money(l.product.price || 0) }} each</small>
             <p v-if="l.quantity > l.product.available" class="basket-error">
               Stock changed. Please reduce or remove this item.

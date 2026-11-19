@@ -28,7 +28,7 @@ export function createEmailOutbox(db: Database.Database) {
   function enqueue(eventKey: string, kind: EmailKind, orderId: string, extra = {}) {
     const order = db.prepare("SELECT * FROM shop_orders WHERE id=?").get(orderId) as any;
     if (!order) throw new Error("Email order not found.");
-    const items = db.prepare(`SELECT i.quantity,i.price,c.player,c.number,c.variant
+    const items = db.prepare(`SELECT i.quantity,i.price,i.sku,c.player,c.number,c.variant
       FROM shop_order_items i JOIN cards c ON c.id=i.card_id WHERE i.order_id=?`).all(orderId);
     const payload = JSON.stringify({ order: {
       id: order.id, total: order.total, shipping: order.shipping,

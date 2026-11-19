@@ -34,7 +34,7 @@ export function renderOrderEmail(email: Pick<OutboxEmail, "kind" | "audience" | 
     lines.push(owner ? "Payment has been verified. This order is ready to prepare."
       : "Thank you for shopping with Toga Cards. Your payment has been confirmed.");
     for (const item of order.items)
-      lines.push(`${item.quantity} × ${item.player} #${item.number} · ${item.variant} — ${money(item.price * item.quantity)}`);
+      lines.push(`${item.quantity} × ${item.player} #${item.number} · ${item.variant}${item.sku ? ` · SKU ${item.sku}` : ""} — ${money(item.price * item.quantity)}`);
     lines.push(`Delivery${order.shipping_method ? ` (${order.shipping_method})` : ""}: ${money(order.shipping)}`,
       `Total paid: ${money(order.total)}`);
     let shipping: any = {};
