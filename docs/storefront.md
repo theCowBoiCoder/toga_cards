@@ -58,7 +58,7 @@ Use the supplied Docker image (Nginx, PHP-FPM and Node) with a persistent `/app/
 
 Run `python scripts/configure-admin.py` before starting Docker. The first administrator uses `LARAVEL_ADMIN_EMAIL` (default `admin@togacards.co.uk`) and `ADMIN_PASSWORD`. Existing accounts/passwords are preserved on restart. Use your profile to change the password and enable authenticator MFA. Laravel stores users, sessions and audit entries in a separate `admin.sqlite`; the existing stock ledger stays in `cards.sqlite`. The gateway blocks public access to private stock APIs. Laravel actions require authenticated administrator access and CSRF validation; a server-only key connects Laravel to the loopback Node service. Preserve `LARAVEL_APP_KEY` with backups. Use HTTPS and the supplied public Nginx rate limits.
 
-Before launch: provide real stock, prices and photos; complete Stripe test acceptance; configure the domain/hosting/backups; supply actual contact, delivery, returns and privacy information; verify order dispatch and confirmation emails. This prototype records customer email and shipping details for admin review. Staff can issue full or partial Stripe refunds, reconcile their statuses, review returns and restore inspected returned copies separately. Refunds never restock cards automatically. Postage/payment-fee reconciliation remains manual; inventory profit figures for website sales currently exclude those costs and are not a complete net-profit calculation. Customers can register and sign in at `/account/login`, view orders placed while signed in, follow carrier tracking links, request returns/refunds and maintain an owned/wanted collection checklist. Guest checkout remains available; guest orders are not claimed by email address. There are no automated dispatch emails or postage label purchasing yet.
+Before launch: provide real stock, prices and photos; complete Stripe test acceptance; configure the domain/hosting/backups; supply actual contact, delivery, returns and privacy information; verify order dispatch and confirmation emails. This prototype records customer email and shipping details for admin review. Staff can issue full or partial Stripe refunds, reconcile their statuses, review returns and restore inspected returned copies separately. Refunds never restock cards automatically. Postage/payment-fee reconciliation remains manual; inventory profit figures for website sales currently exclude those costs and are not a complete net-profit calculation. Customers can register and sign in at `/account/login`, view orders placed while signed in, follow carrier tracking links, request returns/refunds and maintain an owned/wanted collection checklist. Guest checkout remains available; guest orders are not claimed by email address. Order and dispatch emails use the SMTP outbox described below; postage label purchasing is not implemented.
 
 Validation includes Laravel login/access/MFA/audit and stock-action feature tests, combined Docker gateway/asset/CSRF checks, 41 offline inventory/payment/sync tests (`npm test`), production build (`npm run build`), and production HTTP smoke (`npm run test:http`) covering admin authentication including encoded/trailing-slash paths, SSR, cross-origin rejection, webhook signature rejection, synthetic signed fulfilment, duplicate delivery and expiry release. Stripe test checkout requires configured credentials. Live stock updates require a connected seller account and verified inventory mappings.
 
@@ -71,6 +71,34 @@ In **Orders**, staff can record a carrier, reference and HTTPS tracking link. Cu
 Use **Open return** for guest orders, then approve/decline, record receipt, and restore only inspected copies. The restock form accepts the cumulative total received for that order line, making repeated submissions safe. Stock cost is restored from the original recorded sale; historical orders without that link need a reviewed physical count instead. Refund records are separate from immutable sales, so gross sales reports are not net-of-refund profit reports.
 
 Password resets use Laravel's single-use email tokens. Configure `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` and `MAIL_FROM_NAME` in `/etc/toga-cards/runtime.env`, then recreate the container. With the default log mailer, reset links are not generated or logged; the customer sees that email delivery is unavailable. No SMTP credentials or Stripe live tests were assumed by this feature.
+
+### Order emails
+
+The shop queues customer confirmations only after verified payment (including payments confirmed through **Check Stripe**). Customers and staff also receive dispatch notifications, return-request acknowledgements and return updates, and confirmed-refund notifications. Failed refunds alert staff only. Guest customers receive order details without an account-only order link. Password resets continue through Laravel using the same SMTP credentials.
+
+Configure these additional values in the server's `/etc/toga-cards/runtime.env`:
+
+```dotenv
+TOGA_EMAILS_ENABLED=1
+SHOP_NOTIFICATION_EMAIL=your-existing-inbox@example.com
+MAIL_REPLY_TO_ADDRESS=your-existing-inbox@example.com
+MAIL_MAILER=smtp
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_SCHEME=smtp
+MAIL_USERNAME=your-brevo-smtp-login
+MAIL_PASSWORD=your-brevo-smtp-key
+MAIL_FROM_ADDRESS=orders@togacards.co.uk
+MAIL_FROM_NAME=Toga Cards
+```
+
+Brevo is one SMTP option; another provider can use the same variables. Authenticate the sending domain and create an approved sender in the provider first. For Brevo, use an **SMTP key**, not an API key or account password. Add exactly the DNS records the provider supplies, preserving other DNS records. Brevo sends mail but does not provide a customer-support inbox; replies go to `MAIL_REPLY_TO_ADDRESS` (defaults to `SHOP_NOTIFICATION_EMAIL`). Configure only `smtp` with STARTTLS (normally port 587) or `smtps` with implicit TLS (normally port 465). The Node worker requires encrypted SMTP with certificate verification. Both the enable flag and complete SMTP/recipient configuration are required before it sends anything. Recreate the container after changing the environment; a restart alone does not reload its environment file. Production Compose already reads this file. The local Compose file also passes these settings through.
+
+Events and email snapshots are stored atomically with their order changes in `cards.sqlite`. Nothing is backfilled for orders paid before this feature was deployed. New events queue even while delivery is disabled; enabling delivery will drain that backlog, so review it first. The background worker runs every 15 seconds. Failed attempts back off from 30 seconds to one hour and stop after eight failed attempts. **Admin → Order emails** shows the latest 200 messages, configuration status and safe error codes, and lets staff retry exhausted messages. A `sent` status means the SMTP provider accepted the message, not that it reached the inbox; check the provider's logs for bounces or delivery outcomes. A missing customer email leaves only the staff notification.
+
+Event keys prevent duplicate webhook deliveries and repeated dispatch actions from creating duplicate emails. SMTP cannot guarantee exactly-once delivery if the process stops or the network fails after acceptance: an ambiguous attempt can be sent again. Retries preserve the Message-ID but inbox deduplication is not guaranteed. The worker never holds a stock transaction open while sending, and an SMTP outage does not undo payment or dispatch. Outbox snapshots contain order/customer data and must be included in the same privacy/backup controls as orders.
+
+Before enabling in production, verify one message to the shop inbox, a paid test order, replayed payment notification, dispatch with tracking, return updates, a confirmed refund, and password reset. Test order emails are real SMTP messages, so use your own email address. Stripe payment receipts are separate: enable successful-payment receipts in Stripe's customer email settings if wanted, in addition to the shop's itemised order confirmation. No marketing or abandoned-basket emails are sent.
 
 ## Delivery options
 

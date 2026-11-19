@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { createShippingStore } from "./shipping-store";
 import { randomUUID } from "node:crypto";
 import { createOrderSupport } from "./order-support";
+import { createEmailOutbox } from "./email-outbox";
 
 export function createShopStore(
   db: Database.Database,
@@ -42,9 +43,10 @@ export function createShopStore(
       enabled: true,
     });
   }
+  const emails = createEmailOutbox(db);
   const support = createOrderSupport(db, (id) => {
     sync?.assertIdle();
-  });
+  }, emails.enqueue);
   const int = (n: unknown, min = 0) => {
     if (!Number.isSafeInteger(n) || Number(n) < min || Number(n) > 1000000)
       throw new Error("Invalid quantity or price.");
@@ -239,6 +241,7 @@ export function createShopStore(
         ? session.payment_intent
         : session.payment_intent?.id;
     if (paymentIntent) support.bindPayment(order.id, paymentIntent);
+    emails.enqueue(`paid:${order.id}`, "order-paid", order.id);
   });
   const expire = (session: string) =>
     db
@@ -301,14 +304,17 @@ export function createShopStore(
       }
       if (carrierName.length > 100 || url.length > 2000 || !validTrackingUrl)
         throw new Error("Use a carrier name and an HTTPS tracking URL.");
-      if (!current.dispatched_at)
+      if (!current.dispatched_at) {
         db.prepare(
           "UPDATE shop_orders SET dispatched_at=?,tracking_reference=?,carrier=?,tracking_url=? WHERE id=?",
         ).run(new Date().toISOString(), reference, carrierName, url, id);
+        emails.enqueue(`dispatched:${id}`, "order-dispatched", id);
+      }
     },
   );
   return {
     ...support,
+    emails,
     shipping,
     committed,
     products,

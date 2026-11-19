@@ -61,6 +61,7 @@ try {
     "/api/inventory/",
     "/api/export",
     "/api/admin/shop",
+    "/api/admin/emails",
     "/api/ebay",
     "/admin",
     "/%61pi/inventory",
@@ -171,6 +172,7 @@ try {
     payment_status: "paid",
     amount_total: 349,
     currency: "gbp",
+    customer_details: { email: "buyer@example.test" },
   };
   assert.equal(
     (await send("checkout.session.completed", session, false)).status,
@@ -178,6 +180,11 @@ try {
   );
   assert.equal((await send("checkout.session.completed", session)).status, 200);
   assert.equal((await send("checkout.session.completed", session)).status, 200);
+  const notifications = await request("/api/admin/emails");
+  assert.equal(notifications.ready, false, "preview must never send emails");
+  assert.equal(notifications.emails.length, 2, "webhook replay queues one email per recipient");
+  assert.ok(notifications.emails.every((email) => email.status === "pending" && email.attempts === 0));
+  assert.equal("payload" in notifications.emails[0], false, "delivery list omits message contents");
   const after = await request("/api/inventory");
   assert.equal(after.cards.find((c) => c.id === card.id).stock, 2);
   assert.equal(after.sales.filter((s) => s.card_id === card.id).length, 1);

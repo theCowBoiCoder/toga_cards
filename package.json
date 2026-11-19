@@ -19,6 +19,7 @@
     "clsx": "^2.1.1",
     "fast-xml-parser": "^5.11.1",
     "lucide-vue-next": "^0.468.0",
+    "nodemailer": "^10.6.0",
     "nuxt": "^4.5.2",
     "reka-ui": "^2.10.4",
     "shadcn-nuxt": "^2.0.0",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
+    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },

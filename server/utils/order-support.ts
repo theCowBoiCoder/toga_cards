@@ -1,8 +1,10 @@
 import type Database from "better-sqlite3";
+import type { createEmailOutbox } from "./email-outbox";
 
 export function createOrderSupport(
   db: Database.Database,
   stockChanged: (id: number) => void,
+  notify: ReturnType<typeof createEmailOutbox>["enqueue"],
 ) {
   const columns = new Set(
     (db.prepare("PRAGMA table_info(shop_orders)").all() as any[]).map(
@@ -109,6 +111,7 @@ export function createOrderSupport(
       now,
       now,
     );
+    notify(`return-requested:${id}`, "return-requested", id, { reason: text });
   });
   function requestReturn(customerId: number, id: string, reason: unknown) {
     customerOrder(customerId, id);
@@ -138,6 +141,8 @@ export function createOrderSupport(
       db.prepare(
         "UPDATE shop_returns SET status=?,response=?,updated=? WHERE order_id=?",
       ).run(status, text, new Date().toISOString(), id);
+      notify(`return-update:${id}:${current.status}:${status}`, "return-updated", id,
+        { returnStatus: status, response: text });
     },
   );
   const restockReturn = db.transaction(
@@ -231,11 +236,15 @@ export function createOrderSupport(
         .get(key) as any;
     },
   );
-  function failRefundRequest(id: string) {
-    db.prepare(
+  const failRefundRequest = db.transaction((id: string) => {
+    const result = db.prepare(
       "UPDATE shop_refunds SET status='failed',updated=? WHERE id=? AND status='requested' AND stripe_id IS NULL",
     ).run(new Date().toISOString(), id);
-  }
+    if (result.changes) {
+      const refund = refundRequest(id);
+      notify(`refund-failed:${id}`, "refund-failed", refund.order_id, { amount: refund.amount });
+    }
+  });
   function bindPayment(id: string, paymentIntent: string) {
     const current = order(id);
     if (
@@ -298,6 +307,10 @@ export function createOrderSupport(
         now,
         now,
       );
+    if (refund.status === "succeeded" || refund.status === "failed") {
+      const kind = refund.status === "succeeded" ? "refund-completed" : "refund-failed";
+      notify(`${kind}:${refund.id}`, kind, current.id, { amount: refund.amount });
+    }
     return true;
   });
   return {
