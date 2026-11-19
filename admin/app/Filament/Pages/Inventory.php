@@ -18,6 +18,12 @@ use Illuminate\Support\Collection;
 
 class Inventory extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'Shop management';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-square-3-stack-3d';
+
+    protected ?string $subheading = 'Manage your cards, physical stock and shop availability.';
+
     protected static ?string $title = 'Inventory & shop';
 
     protected static ?string $navigationLabel = 'Cards & stock';

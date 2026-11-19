@@ -1,11 +1,16 @@
 <x-filament-panels::page>
+    @php($status = $this->status())
     <x-filament::section heading="Manual eBay stock updates">
-        <p>Website stock is authoritative. eBay quantities change only when you select Update eBay stock for a card.</p>
-        <p>{{ $this->status()['running'] ? 'A stock check is running.' : 'No check currently running.' }}</p>
-        <p>Last completed check: {{ $this->status()['lastSuccess'] ?: 'Never' }}</p>
-        @if ($this->status()['unmapped']) <p>{{ $this->status()['unmapped'] }} active eBay listings need matching before those listings can be updated. Website stock remains available.</p> @endif
-        @if ($this->status()['lastError']) <p>{{ $this->status()['lastError'] }}</p> @endif
-        <p>Select a card in Cards &amp; stock to update its linked listings. No automatic quantity updates or retries run.</p>
+        <div class="tc-stack">
+            <dl class="tc-info-grid">
+                <div><dt>Current status</dt><dd><x-filament::badge :color="($status['running'] ?? false) ? 'info' : 'gray'">{{ ($status['running'] ?? false) ? 'Check running' : 'Idle' }}</x-filament::badge></dd></div>
+                <div><dt>Last completed check</dt><dd>{{ filled($status['lastSuccess'] ?? null) ? \Illuminate\Support\Carbon::parse($status['lastSuccess'])->format('j M Y · H:i') : 'No completed checks' }}</dd></div>
+            </dl>
+            <p class="tc-muted">Website stock is the source of truth. Select a card in Cards &amp; stock and choose <strong>Update eBay stock</strong> to update its linked listings.</p>
+            @if ($status['unmapped'] ?? 0) <p class="tc-alert">{{ $status['unmapped'] }} active eBay listings need matching before they can be updated. Website stock remains available.</p> @endif
+            @if ($status['lastError'] ?? null) <p class="tc-alert" role="alert">{{ $status['lastError'] }}</p> @endif
+            <p class="tc-muted">Quantity updates and retries run only when requested.</p>
+        </div>
     </x-filament::section>
     {{ $this->table }}
 </x-filament-panels::page>

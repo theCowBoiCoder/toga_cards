@@ -8,6 +8,12 @@ use Filament\Tables\Columns\TextColumn;
 
 class Audit extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'Administration';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-clock';
+
+    protected ?string $subheading = 'Review recent admin actions and their outcomes.';
+
     protected static ?string $title = 'Activity log';
 
     protected static ?string $navigationLabel = 'Activity log';

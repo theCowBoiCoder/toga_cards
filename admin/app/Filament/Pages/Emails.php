@@ -6,6 +6,10 @@ use Filament\Tables\Columns\TextColumn;
 
 class Emails extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'Shop management';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-envelope';
+
     protected static ?int $navigationSort = 35;
 
     protected static ?string $title = 'Order emails';

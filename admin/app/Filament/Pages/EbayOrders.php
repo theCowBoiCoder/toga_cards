@@ -6,6 +6,12 @@ use Filament\Tables\Columns\TextColumn;
 
 class EbayOrders extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'eBay';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-inbox-stack';
+
+    protected ?string $subheading = 'Review imported orders and confirm stock deductions and fees.';
+
     protected static ?string $title = 'eBay order review';
 
     protected static ?string $navigationLabel = 'eBay order review';

@@ -1,4 +1,4 @@
 <x-filament-panels::page>
-    <p><strong>Edit shop</strong> sets the price, condition, photo and copies to sell. <strong>Stock</strong> handles receipts, counts and offline sales. <strong>Owned</strong> shows your physical stock; <strong>Shop available</strong> shows copies customers can buy after eBay checks and checkout reservations.</p>
+    <div class="tc-help"><strong>Edit shop</strong> manages price, photos and copies for sale. Use <strong>Stock</strong> for receipts, stock counts and offline sales. <strong>Owned</strong> is your physical stock; <strong>Shop available</strong> accounts for eBay checks and checkout reservations.</div>
     {{ $this->table }}
 </x-filament-panels::page>

@@ -10,6 +10,10 @@ use Filament\Tables\Columns\TextColumn;
 
 class Delivery extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'Shop management';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-truck';
+
     protected static ?string $title = 'Delivery options';
 
     protected static ?int $navigationSort = 35;

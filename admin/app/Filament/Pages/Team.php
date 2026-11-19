@@ -12,6 +12,12 @@ use Filament\Tables\Columns\TextColumn;
 
 class Team extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'Administration';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-users';
+
+    protected ?string $subheading = 'Manage the people who can access your shop administration.';
+
     protected static ?string $title = 'Admin accounts';
 
     protected static ?string $navigationLabel = 'Admin accounts';

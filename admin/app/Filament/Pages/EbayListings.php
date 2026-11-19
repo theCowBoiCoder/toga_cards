@@ -8,6 +8,12 @@ use Filament\Tables\Columns\TextColumn;
 
 class EbayListings extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'eBay';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-tag';
+
+    protected ?string $subheading = 'Connect your seller account and match listings to your inventory.';
+
     protected static ?string $title = 'eBay listings';
 
     protected static ?string $navigationLabel = 'eBay listings';

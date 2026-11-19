@@ -61,7 +61,7 @@ abstract class RecordsPage extends Page implements HasTable
             }
 
             return new LengthAwarePaginator($rows->forPage($page, $recordsPerPage), $rows->count(), $recordsPerPage, $page);
-        })->columns($this->columns())->recordActions($this->rowActions())->searchable()->paginated([25, 50, 100])->defaultPaginationPageOption(25)->emptyStateHeading('No matching records');
+        })->columns($this->columns())->recordActions($this->rowActions())->searchable()->paginated([25, 50, 100])->defaultPaginationPageOption(25)->emptyStateIcon('heroicon-o-magnifying-glass')->emptyStateHeading('No matching records')->emptyStateDescription('Try a different search or adjust your filters.');
     }
 
     protected function perform(string $path, array $data, string $title = 'Saved'): void

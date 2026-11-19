@@ -6,6 +6,12 @@ use Filament\Tables\Columns\TextColumn;
 
 class StockSync extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'eBay';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-path';
+
+    protected ?string $subheading = 'Review and manage selected eBay stock updates.';
+
     protected static ?string $title = 'eBay stock updates';
 
     protected static ?string $navigationLabel = 'eBay stock updates';

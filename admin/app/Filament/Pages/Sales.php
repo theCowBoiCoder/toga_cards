@@ -6,6 +6,12 @@ use Filament\Tables\Columns\TextColumn;
 
 class Sales extends RecordsPage
 {
+    protected static string|\UnitEnum|null $navigationGroup = 'Shop management';
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-chart-bar';
+
+    protected ?string $subheading = 'Track recorded sales, item revenue and selling costs.';
+
     protected static ?int $navigationSort = 40;
 
     protected function sourceRows(): array

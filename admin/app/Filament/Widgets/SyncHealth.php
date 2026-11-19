@@ -7,6 +7,8 @@ use Filament\Widgets\Widget;
 
 class SyncHealth extends Widget
 {
+    protected static ?int $sort = 2;
+
     protected string $view = 'filament.widgets.sync-health';
 
     protected int|string|array $columnSpan = 'full';
