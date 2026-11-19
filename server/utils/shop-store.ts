@@ -3,6 +3,7 @@ import { createShippingStore } from "./shipping-store";
 import { randomUUID } from "node:crypto";
 import { createOrderSupport } from "./order-support";
 import { createEmailOutbox } from "./email-outbox";
+import { createCheckoutStore } from "./checkout-store";
 
 export function createShopStore(
   db: Database.Database,
@@ -44,6 +45,7 @@ export function createShopStore(
     });
   }
   const emails = createEmailOutbox(db);
+  const checkouts = createCheckoutStore(db);
   const support = createOrderSupport(db, (id) => {
     sync?.assertIdle();
   }, emails.enqueue);
@@ -171,16 +173,18 @@ export function createShopStore(
       return { id, total, lines };
     },
   );
-  const attach = (id: string, session: string) =>
-    db
+  const attach = (id: string, session: string) => {
+    const result = db
       .prepare(
-        "UPDATE shop_orders SET session_id=? WHERE id=? AND status='pending'",
+        "UPDATE shop_orders SET session_id=? WHERE id=? AND status='pending' AND (session_id IS NULL OR session_id=?)",
       )
-      .run(session, id);
+      .run(session, id, session);
+    if (!result.changes) throw new Error("Checkout session could not be linked safely.");
+  };
   const release = (id: string) =>
     db
       .prepare(
-        "UPDATE shop_orders SET status='expired' WHERE id=? AND status='pending'",
+        "UPDATE shop_orders SET status='expired' WHERE id=? AND status='pending' AND session_id IS NULL",
       )
       .run(id);
   const complete = db.transaction((session: any) => {
@@ -315,6 +319,7 @@ export function createShopStore(
   return {
     ...support,
     emails,
+    checkouts,
     shipping,
     committed,
     products,

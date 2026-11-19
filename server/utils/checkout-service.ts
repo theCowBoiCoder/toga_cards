@@ -1,6 +1,8 @@
 import { getInventory } from "./inventory";
 import { stripeClient } from "./stripe";
 import { basketCardCount } from "../../shared/shipping";
+import { randomBytes } from "node:crypto";
+import { checkoutErrorCode, definitiveCheckoutRejection } from "./checkout-recovery";
 export async function startCheckout(
   items: unknown,
   customer?: { id: number; email: string },
@@ -20,23 +22,13 @@ export async function startCheckout(
     });
   const stripe = stripeClient(),
     shop = getInventory().shop;
-  let order: ReturnType<typeof shop.reserve>;
-  let delivery: ReturnType<typeof shop.shipping.select>;
+  const cancelToken = randomBytes(32).toString("hex");
+  let prepared: ReturnType<typeof shop.checkouts.prepare<ReturnType<typeof shop.reserve>>>;
   try {
-    delivery = shop.shipping.select(shippingId, basketCardCount(items));
-    order = shop.reserve(items, delivery.price, customer?.id, delivery.name);
-  } catch (e) {
-    throw createError({
-      statusCode: 409,
-      statusMessage:
-        e instanceof Error ? e.message : "Check basket availability.",
-    });
-  }
-  // Keep reservations on ambiguous network failures: releasing could sell stock twice.
-  // Admin can reconcile the order against Stripe using this idempotency key.
-  try {
-    const session = await stripe.checkout.sessions.create(
-      {
+    const delivery = shop.shipping.select(shippingId, basketCardCount(items));
+    prepared = shop.checkouts.prepare(
+      () => shop.reserve(items, delivery.price, customer?.id, delivery.name),
+      (order) => ({
         mode: "payment",
         ...(customer ? { customer_email: customer.email } : {}),
         client_reference_id: order.id,
@@ -45,7 +37,7 @@ export async function startCheckout(
         success_url: customer
           ? `${base.replace(/\/$/, "")}/account/orders/${order.id}?checkout=success`
           : `${base.replace(/\/$/, "")}/?checkout=success`,
-        cancel_url: `${base.replace(/\/$/, "")}/shop?checkout=cancelled`,
+        cancel_url: `${base.replace(/\/$/, "")}/shop?checkout=cancelled&order=${order.id}`,
         shipping_address_collection: { allowed_countries: ["GB"] },
         shipping_options: [
           {
@@ -81,16 +73,29 @@ export async function startCheckout(
             },
           },
         })),
-      },
-      { idempotencyKey: order.id },
+      }),
+      cancelToken,
     );
+  } catch (e) {
+    throw createError({ statusCode: 409, statusMessage: e instanceof Error ? e.message : "Check basket availability." });
+  }
+  const { order, request, token } = prepared;
+  let receivedSession = false;
+  try {
+    const session = await stripe.checkout.sessions.create(request, { idempotencyKey: order.id });
+    receivedSession = true;
     shop.attach(order.id, session.id);
-    return { url: session.url };
-  } catch {
+    shop.checkouts.finish(order.id, token);
+    return { url: session.url, orderId: order.id, cancelToken };
+  } catch (error) {
+    const rejected = !receivedSession && definitiveCheckoutRejection(error);
+    if (rejected) shop.release(order.id);
+    shop.checkouts.finish(order.id, token, checkoutErrorCode(error));
     throw createError({
       statusCode: 502,
-      statusMessage:
-        "Could not open checkout. Stock is held for review; please contact the shop before trying again.",
+      statusMessage: rejected
+        ? "Checkout could not be opened. Reserved stock has been returned; your basket is saved."
+        : "Could not open checkout. Stock is held while we check Stripe; please contact the shop before trying again.",
     });
   }
 }

@@ -108,6 +108,13 @@ try {
   );
   assert.equal(catalog.products.length, 1138);
   assert.equal(catalog.checkoutReady, false);
+  for (const [requestOrigin, expected] of [["https://invalid.example", 403], [origin, 404]]) {
+    const cancellation = await fetch(origin + "/api/shop/cancel", {
+      method: "POST", headers: { Origin: requestOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: "unknown", cancelToken: "a".repeat(64) }),
+    });
+    assert.equal(cancellation.status, expected, "checkout cancellation requires same origin and a valid capability");
+  }
   await request("/api/inventory", {
     action: "card",
     player: "Smoke fixture",

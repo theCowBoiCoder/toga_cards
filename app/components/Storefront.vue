@@ -32,7 +32,9 @@ const basketOpen = ref(false),
   notice = ref("");
 const basket = ref<Record<number, number>>({});
 const account = ref<{customer: {name:string}|null;csrf:string}|null>(null);
+const cancellationMessage = ref("Checkout cancelled. Your basket is saved; reserved copies return after Stripe confirms checkout has expired.");
 onMounted(() => {
+  void cancelReturnedCheckout();
   $fetch<any>('/account/session').then(value => {account.value=value;}).catch(() => {});
   try {
     const stored = JSON.parse(localStorage.getItem("toga-basket") || "{}");
@@ -149,6 +151,8 @@ async function checkout() {
         })),
       },
     });
+    // Keep the cancellation capability in this tab, never in a URL or cookie.
+    try { sessionStorage.setItem(`toga-checkout:${r.orderId}`, r.cancelToken); } catch {}
     window.location.assign(r.url);
   } catch (e: any) {
     notice.value = e.data?.statusMessage || e.data?.message || e.message || "Checkout could not be opened.";
@@ -158,6 +162,31 @@ async function checkout() {
   }
 }
 const route = useRoute();
+async function cancelReturnedCheckout() {
+  if (route.query.checkout !== "cancelled" || typeof route.query.order !== "string") return;
+  const orderId = route.query.order;
+  let cancelToken: string | null = null;
+  try { cancelToken = sessionStorage.getItem(`toga-checkout:${orderId}`); } catch {}
+  if (!cancelToken) return;
+  cancellationMessage.value = "Cancelling checkout and checking your reservation…";
+  try {
+    const result = await $fetch<{ status: string }>("/api/shop/cancel", {
+      method: "POST", body: { orderId, cancelToken },
+    });
+    if (result.status === "expired") {
+      cancellationMessage.value = "Checkout cancelled. Reserved stock is available again; your basket is saved.";
+      try { sessionStorage.removeItem(`toga-checkout:${orderId}`); } catch {}
+    } else if (result.status === "paid") {
+      cancellationMessage.value = "Payment was already completed. Your order remains confirmed.";
+      try { sessionStorage.removeItem(`toga-checkout:${orderId}`); } catch {}
+    } else {
+      cancellationMessage.value = "Cancellation is being checked. Reserved stock will return once Stripe confirms checkout has expired.";
+    }
+  } catch {
+    cancellationMessage.value = "We could not confirm cancellation yet. Your basket is saved; stock will return after confirmed checkout expiry.";
+  }
+  await refresh();
+}
 </script>
 <template>
   <div class="store">
@@ -190,8 +219,7 @@ const route = useRoute();
       verifies payment. Please check your Stripe receipt.
     </div>
     <div v-if="route.query.checkout === 'cancelled'" class="shop-message">
-      Checkout cancelled. Your basket is saved; reserved copies return when the
-      checkout session expires.
+      {{ cancellationMessage }}
     </div>
     <main>
       <section v-if="!shopPage" class="hero">
