@@ -46,6 +46,8 @@ export function createEbayStore(db: Database.Database, holdings: () => any[]) {
       )
       .run(key, value);
   const deleteAccount = db.transaction(() => {
+    if (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ebay_listing_drafts'").get())
+      db.exec("DELETE FROM ebay_listing_drafts");
     // Keep physical holdings unchanged, without retaining eBay sale details.
     const sales = db
       .prepare(

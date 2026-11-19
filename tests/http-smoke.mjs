@@ -63,6 +63,7 @@ try {
     "/api/admin/shop",
     "/api/admin/shop-visibility",
     "/api/admin/emails",
+    "/api/admin/ebay-create",
     "/api/ebay",
     "/admin",
     "/%61pi/inventory",
@@ -152,6 +153,9 @@ try {
   const singleProduct = (await request("/api/admin/shop")).products.find((product) => product.id === card.id);
   assert.equal(singleProduct.price, 199);
   assert.equal(singleProduct.available, 2);
+  const publishingContext = await request("/api/admin/ebay-create");
+  assert.equal(publishingContext.products.find((product) => product.id === card.id).sku, single.sku);
+  assert.equal("tokens" in publishingContext, false);
   const proxied = await fetch(origin + '/api/admin/shop', {
     method:'POST',headers:{authorization,Origin:origin.replace('http:','https:'),'X-Forwarded-Proto':'https','Content-Type':'application/json'},
     body:JSON.stringify({cardId:card.id,quantity:2,price:199,stockConfirmed:true}),

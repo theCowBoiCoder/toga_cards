@@ -24,16 +24,18 @@ const specifics = (v: any) =>
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map((pair) => pair.join(": "))
     .join(" / ");
-export function decodeResponse(xml: string, call: string) {
+export function decodeResponse(xml: string, call: string, allowWarnings = false) {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml))
     throw new Error("Unexpected eBay XML document.");
   const result = parser.parse(xml)[`${call}Response`];
   if (!result || !["Success", "Warning"].includes(result.Ack))
     throw new Error(
-      `eBay ${call} failed (${text(array(result?.Errors)[0]?.ErrorCode) || "invalid response"}). Reconnect or check eBay API access.`,
+      allowWarnings
+        ? `eBay ${call} failed: ${array(result?.Errors).map((error) => `${text(error.ErrorCode)} ${text(error.LongMessage || error.ShortMessage)}`).join("; ").slice(0, 1200) || "invalid response"}`
+        : `eBay ${call} failed (${text(array(result?.Errors)[0]?.ErrorCode) || "invalid response"}). Reconnect or check eBay API access.`,
     );
   // Warnings may indicate a partial result: never replace local state from one.
-  if (result.Ack === "Warning")
+  if (result.Ack === "Warning" && !allowWarnings)
     throw new Error(
       `eBay ${call} returned a warning; the previous snapshot was retained.`,
     );
@@ -125,7 +127,7 @@ export function parseOrders(response: any): EbayOrder[] {
   );
 }
 
-export async function tradingCall(token: string, call: string, body: string) {
+export async function tradingCall(token: string, call: string, body: string, allowWarnings = false) {
   const response = await fetch("https://api.ebay.com/ws/api.dll", {
     method: "POST",
     headers: {
@@ -142,7 +144,20 @@ export async function tradingCall(token: string, call: string, body: string) {
     throw new Error(
       `eBay returned HTTP ${response.status}. No stock changes were made by this fetch.`,
     );
-  return decodeResponse(await response.text(), call);
+  return decodeResponse(await response.text(), call, allowWarnings);
+}
+export async function fetchActiveListings(token: string, call = tradingCall): Promise<EbayListing[]> {
+  const listings: EbayListing[] = [];
+  for (let page = 1; page <= 1000; page++) {
+    const response = await call(token, "GetMyeBaySelling",
+      `<ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination></ActiveList><HideVariations>false</HideVariations>`);
+    const batch = parseListings(response);
+    listings.push(...batch);
+    const pages = Number(response.ActiveList?.PaginationResult?.TotalNumberOfPages ?? (batch.length ? NaN : 0));
+    if (!Number.isSafeInteger(pages) || pages < 0 || pages > 1000) throw new Error("Invalid eBay listing pagination.");
+    if (page >= pages) return listings;
+  }
+  throw new Error("eBay listing pagination limit reached.");
 }
 export async function fetchEbaySnapshot(
   token: string,

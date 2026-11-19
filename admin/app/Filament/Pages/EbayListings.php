@@ -66,7 +66,8 @@ class EbayListings extends RecordsPage
 
     protected function getHeaderActions(): array
     {
-        return [$this->adminAction('sync')->label('Import eBay now')->action(fn () => $this->perform('/api/ebay/action', ['action' => 'sync'], 'eBay imported')),
+        return [$this->adminAction('createEbay')->label('Create eBay listing')->url(EbayCreate::getUrl()),
+            $this->adminAction('sync')->label('Import eBay now')->action(fn () => $this->perform('/api/ebay/action', ['action' => 'sync'], 'eBay imported')),
             $this->adminAction('settings')->label('OAuth settings')->fillForm(fn (): array => ['ruName' => $this->connection()['ruName'] ?? ''])->schema([TextInput::make('ruName')->label('Production RuName')->required()->maxLength(300)])->action(fn (array $data) => $this->perform('/api/ebay/action', ['action' => 'settings', ...$data], 'OAuth settings saved')),
             $this->adminAction('finishStocktake')->label('Finish stocktake')->requiresConfirmation()->modalDescription('Enable automatic deductions for newly paid, mapped eBay orders after completing the stock review.')->action(fn () => $this->perform('/api/ebay/action', ['action' => 'automatic', 'enabled' => true], 'Automatic order deductions enabled'))];
     }

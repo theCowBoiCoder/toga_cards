@@ -123,6 +123,9 @@ class Inventory extends RecordsPage
     {
         return [
             $this->shopAction(),
+            $this->adminAction('createEbay')->label('Create eBay listing')->color('gray')
+                ->disabled(fn (array $record): bool => ! $record['shop_listed'] || $record['available'] < 1)
+                ->url(fn (array $record): string => EbayCreate::getUrl(['card' => $record['id']])),
             $this->adminAction('updateEbay')->label('Update eBay stock')->color('gray')
                 ->requiresConfirmation()
                 ->modalDescription(fn (array $record): string => 'Update only this card’s linked eBay listings from its current website availability ('.$record['available'].' copies). If several listings are linked, the first receives the stock and the others are set to zero. Prices stay unchanged. Future stock changes require another update.')

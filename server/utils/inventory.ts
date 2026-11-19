@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { calculateSetProgress } from "./set-progress";
 import { createEbayStore } from "./ebay-store";
+import { createEbayPublishingStore } from "./ebay-publishing-store";
 import catalogue from "../../catalog/topps-premier-league-2026-27.json";
 
 export function createInventory(path: string) {
@@ -49,6 +50,7 @@ export function createInventory(path: string) {
   });
   const ebay = createEbayStore(db, cards);
   const stockSync = createStockSyncStore(db, cards);
+  const ebayPublishing = createEbayPublishingStore(db);
   function snapshot() {
     const holdings = cards();
     return {
@@ -189,6 +191,7 @@ export function createInventory(path: string) {
     mutate,
     importCatalogue,
     ebay,
+    ebayPublishing,
     shop,
     stockSync,
     health: () => db.prepare("SELECT 1 FROM cards LIMIT 1").get(),

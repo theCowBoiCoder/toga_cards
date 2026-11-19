@@ -16,7 +16,7 @@ class InventoryClient
 {
     private array $responses = [];
 
-    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/shop-visibility', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/admin/shipping', '/api/admin/emails', '/api/ebay/action'];
+    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/shop-visibility', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/admin/shipping', '/api/admin/emails', '/api/admin/ebay-create', '/api/ebay/action'];
 
     public function authorize(): void
     {
@@ -35,7 +35,7 @@ class InventoryClient
         $host = parse_url($origin, PHP_URL_HOST);
         $port = parse_url($origin, PHP_URL_PORT);
         try {
-            $response = Http::baseUrl(config('inventory.url'))->acceptJson()->connectTimeout(3)->timeout(45)
+            $response = Http::baseUrl(config('inventory.url'))->acceptJson()->connectTimeout(3)->timeout($path === '/api/admin/ebay-create' ? 180 : 45)
                 ->withHeaders(['X-Toga-Admin-Key' => $key, 'Origin' => $origin, 'Host' => $host.($port ? ':'.$port : ''), 'X-Forwarded-Proto' => parse_url($origin, PHP_URL_SCHEME)])
                 ->send($method, $path, $method === 'GET' ? ['query' => $parameters] : ['json' => $parameters]);
         } catch (ConnectionException $exception) {
@@ -48,7 +48,7 @@ class InventoryClient
     public function get(string $path): array
     {
         $this->authorize();
-        if (! in_array($path, ['/api/inventory', '/api/admin/shop', '/api/admin/shipping', '/api/admin/emails', '/api/ebay'], true)) {
+        if (! in_array($path, ['/api/inventory', '/api/admin/shop', '/api/admin/shipping', '/api/admin/emails', '/api/admin/ebay-create', '/api/ebay'], true)) {
             throw new AuthorizationException;
         }
         if (! isset($this->responses[$path])) {
@@ -66,7 +66,7 @@ class InventoryClient
         if (! in_array($path, self::MUTATIONS, true)) {
             throw new AuthorizationException;
         }
-        $audit = AuditEvent::create(['user_id' => auth()->id(), 'operation' => $path.':'.($parameters['action'] ?? 'update'), 'parameters' => Arr::only($parameters, ['cardId', 'quantity', 'price', 'expectedStock', 'orderId', 'amount', 'status', 'mode', 'key', 'unitCost', 'unitPrice', 'fees', 'date', 'platform', 'condition', 'enabled']), 'outcome' => 'pending']);
+        $audit = AuditEvent::create(['user_id' => auth()->id(), 'operation' => $path.':'.($parameters['action'] ?? 'update'), 'parameters' => Arr::only($parameters, ['cardId', 'draftId', 'confirmed', 'quantity', 'price', 'expectedStock', 'orderId', 'amount', 'status', 'mode', 'key', 'unitCost', 'unitPrice', 'fees', 'date', 'platform', 'condition', 'enabled']), 'outcome' => 'pending']);
         try {
             $response = $this->request('POST', $path, $parameters);
         } catch (ValidationException $exception) {
