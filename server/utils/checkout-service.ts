@@ -39,7 +39,6 @@ export async function startCheckout(
       {
         mode: "payment",
         ...(customer ? { customer_email: customer.email } : {}),
-        payment_method_types: ["card"],
         client_reference_id: order.id,
         metadata: { orderId: order.id },
         expires_at: Math.floor(Date.now() / 1000) + 1800,
