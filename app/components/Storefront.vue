@@ -271,16 +271,19 @@ async function cancelReturnedCheckout() {
               }}
             </h2>
           </div>
-          <span class="catalogue-count"
-            >{{ products.length.toLocaleString() }} catalogue entries</span
-          >
+          <span class="catalogue-count">
+            {{ products.length.toLocaleString() }}
+            {{ data?.inStockOnly ? "in stock" : "catalogue entries" }}
+          </span>
         </div>
         <div class="catalogue-note">
           <span class="status-dot"></span>
           {{
             data?.demo
               ? "Shop preview · Demonstration stock and prices, separate from your real inventory."
-              : "Browse the catalogue. Only cards with confirmed stock and a price are available to buy."
+              : data?.inStockOnly
+                ? "Showing cards currently available to buy."
+                : "Browse the catalogue. Only cards with confirmed stock and a price are available to buy."
           }}
           Product photos appear where provided; labelled illustrations are catalogue previews.
         </div>
@@ -302,7 +305,7 @@ async function cancelReturnedCheckout() {
         </div>
         <div class="results-bar">
           <span>{{ results.length.toLocaleString() }} cards</span
-          ><label
+          ><label v-if="!data?.inStockOnly"
             ><input v-model="onlyStock" type="checkbox" /> In stock only</label
           ><select v-model="sort" aria-label="Sort cards">
             <option value="number">Card number</option>
@@ -312,9 +315,11 @@ async function cancelReturnedCheckout() {
         </div>
         <div v-if="!results.length" class="empty-results">
           <Layers :size="36" />
-            <h3>No cards found</h3>
-          <p>Try a different search or turn off the in-stock filter.</p>
+          <h3>{{ data?.inStockOnly && !products.length ? "No cards in stock" : "No cards found" }}</h3>
+          <p v-if="data?.inStockOnly && !products.length">Check back when more cards are available.</p>
+          <p v-else>{{ onlyStock ? "Try a different search or turn off the in-stock filter." : "Try a different search or change your filters." }}</p>
           <button
+            v-if="search || club || variant || onlyStock"
             @click="
               search = '';
               club = '';

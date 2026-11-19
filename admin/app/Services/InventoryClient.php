@@ -16,7 +16,7 @@ class InventoryClient
 {
     private array $responses = [];
 
-    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/admin/shipping', '/api/admin/emails', '/api/ebay/action'];
+    private const MUTATIONS = ['/api/inventory', '/api/admin/shop', '/api/admin/shop-visibility', '/api/admin/stock-sync', '/api/admin/reconcile', '/api/admin/dispatch', '/api/admin/refund', '/api/admin/returns', '/api/admin/shipping', '/api/admin/emails', '/api/ebay/action'];
 
     public function authorize(): void
     {

@@ -61,6 +61,7 @@ try {
     "/api/inventory/",
     "/api/export",
     "/api/admin/shop",
+    "/api/admin/shop-visibility",
     "/api/admin/emails",
     "/api/ebay",
     "/admin",
@@ -106,7 +107,8 @@ try {
   let catalog = await fetch(origin + "/api/shop/catalogue").then((r) =>
     r.json(),
   );
-  assert.equal(catalog.products.length, 1138);
+  assert.equal(catalog.inStockOnly, true);
+  assert.ok(catalog.products.every(({ available }) => available > 0));
   assert.equal(catalog.checkoutReady, false);
   for (const [requestOrigin, expected] of [["https://invalid.example", 403], [origin, 404]]) {
     const cancellation = await fetch(origin + "/api/shop/cancel", {
@@ -144,6 +146,19 @@ try {
     body:JSON.stringify({cardId:card.id,quantity:2,price:199,stockConfirmed:true}),
   });
   assert.equal(proxied.status,200,'HTTPS reverse-proxy origin accepted');
+  await request("/api/admin/shop-visibility", { enabled: true });
+  assert.equal((await request("/api/admin/shop")).inStockOnly, true);
+  const inStockCatalogue = await fetch(origin + "/api/shop/catalogue").then((r) => r.json());
+  assert.equal(inStockCatalogue.inStockOnly, true);
+  assert.ok(inStockCatalogue.products.some(({ id }) => id === card.id));
+  assert.ok(inStockCatalogue.products.every(({ available }) => available > 0));
+  const shopHtml = await fetch(origin + "/shop").then((r) => r.text());
+  assert.match(shopHtml, /in stock/);
+  assert.doesNotMatch(shopHtml, /In stock only/);
+  await request("/api/admin/shop-visibility", { enabled: false });
+  assert.equal((await request("/api/admin/shop")).inStockOnly, false);
+  const fullCatalogue = await fetch(origin + "/api/shop/catalogue").then((r) => r.json());
+  assert.equal(fullCatalogue.products.length, 1139);
   db = new Database(join(directory, "cards.sqlite"));
   const order = (id, session) => {
     db.prepare(

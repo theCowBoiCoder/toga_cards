@@ -10,6 +10,7 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
@@ -169,7 +170,15 @@ class Inventory extends RecordsPage
 
     protected function getHeaderActions(): array
     {
-        return [$this->adminAction('addCard')->label('Add card')->schema([
+        return [
+            $this->adminAction('shopVisibility')->label('Shop visibility')->color('gray')
+                ->fillForm(fn (): array => ['enabled' => $this->client()->get('/api/admin/shop')['inStockOnly']])
+                ->schema([
+                    Toggle::make('enabled')->label('Only show in-stock cards')
+                        ->helperText('Show customers only cards currently available to buy on the website.'),
+                ])
+                ->action(fn (array $data) => $this->perform('/api/admin/shop-visibility', $data, 'Shop visibility saved')),
+            $this->adminAction('addCard')->label('Add card')->schema([
             TextInput::make('player')->required()->maxLength(150), TextInput::make('club')->required()->maxLength(150), TextInput::make('number')->required()->maxLength(150),
             TextInput::make('season')->default('2026/27')->required(), TextInput::make('collection')->default('Topps Flagship Premier League')->required(), TextInput::make('variant')->default('Base')->required(),
             Select::make('condition')->options(array_combine(['Near mint', 'Excellent', 'Very good', 'Good', 'Poor'], ['Near mint', 'Excellent', 'Very good', 'Good', 'Poor']))->required(),

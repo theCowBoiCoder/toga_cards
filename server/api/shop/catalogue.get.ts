@@ -4,7 +4,7 @@ export default defineEventHandler((event) => {
   const options = getInventory().shop.shipping.available();
   return {
     demo: process.env.TOGA_PREVIEW === "1",
-    products: getInventory().shop.products(),
+    ...getInventory().shop.publicCatalogue(),
     checkoutReady:
       process.env.TOGA_PREVIEW !== "1" &&
       !!(

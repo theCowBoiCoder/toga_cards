@@ -16,6 +16,7 @@ export function createShopStore(
   },
 ) {
   db.exec(`CREATE TABLE IF NOT EXISTS shop_listings (card_id INTEGER PRIMARY KEY REFERENCES cards(id), price INTEGER NOT NULL, quantity INTEGER NOT NULL, photo TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS shop_settings (id INTEGER PRIMARY KEY CHECK (id = 1), in_stock_only INTEGER NOT NULL CHECK (in_stock_only IN (0, 1)));
     CREATE TABLE IF NOT EXISTS shop_orders (id TEXT PRIMARY KEY, status TEXT NOT NULL, session_id TEXT UNIQUE, total INTEGER NOT NULL, shipping INTEGER NOT NULL, created TEXT NOT NULL, email TEXT, address TEXT);
     CREATE TABLE IF NOT EXISTS shop_order_items (order_id TEXT NOT NULL REFERENCES shop_orders(id), card_id INTEGER NOT NULL REFERENCES cards(id), quantity INTEGER NOT NULL, price INTEGER NOT NULL, PRIMARY KEY(order_id,card_id));`);
   const orderColumns = new Set(
@@ -89,6 +90,21 @@ export function createShopStore(
       };
     });
   }
+  const readVisibility = db.prepare("SELECT in_stock_only FROM shop_settings WHERE id = 1");
+  const writeVisibility = db.prepare(
+    "INSERT INTO shop_settings (id, in_stock_only) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET in_stock_only = excluded.in_stock_only",
+  );
+  const inStockOnly = () =>
+    (readVisibility.get() as { in_stock_only: number } | undefined)?.in_stock_only !== 0;
+  const setInStockOnly = (enabled: boolean) => writeVisibility.run(Number(enabled));
+  const publicCatalogue = () => {
+    const enabled = inStockOnly();
+    const all = products();
+    return {
+      inStockOnly: enabled,
+      products: enabled ? all.filter((product) => product.available > 0) : all,
+    };
+  };
   const publish = db.transaction((body: any) => {
     sync?.assertIdle();
     const id = int(body.cardId, 1),
@@ -323,6 +339,9 @@ export function createShopStore(
     shipping,
     committed,
     products,
+    inStockOnly,
+    setInStockOnly,
+    publicCatalogue,
     publish,
     reserve,
     attach,

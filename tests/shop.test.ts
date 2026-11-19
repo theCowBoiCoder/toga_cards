@@ -52,6 +52,20 @@ test("public products omit purchase costs and checkout locks stock atomically", 
   assert.equal(inv.shop.products()[0].available, 3);
   inv.close();
 });
+test("in-stock catalogue follows current website availability", () => {
+  const inv = setup();
+  inv.mutate({ ...card, number: "25" });
+  assert.equal(inv.shop.publicCatalogue().inStockOnly, true);
+  assert.deepEqual(inv.shop.publicCatalogue().products.map(({ id }) => id), [1]);
+  const order = inv.shop.reserve([{ id: 1, quantity: 3 }], 150);
+  assert.deepEqual(inv.shop.publicCatalogue().products, []);
+  assert.equal(inv.shop.products().length, 2);
+  inv.shop.release(order.id);
+  assert.equal(inv.shop.publicCatalogue().products.length, 1);
+  inv.shop.setInStockOnly(false);
+  assert.equal(inv.shop.publicCatalogue().products.length, 2);
+  inv.close();
+});
 test("signed payment fulfilment is atomic and replay-safe; prices and totals are verified", () => {
   const inv = setup();
   const o = inv.shop.reserve([{ id: 1, quantity: 2 }], 150);
