@@ -68,7 +68,8 @@ try:
     with request("/shop") as response:
         html = response.read().decode()
         assert response.status == 200, "Shop did not return HTTP 200"
-        assert re.search(r"<title[^>]*>\s*Toga Cards\b", html, re.IGNORECASE), "Shop title is missing"
+    title = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
+    assert title and all(term in title.group(1).lower() for term in ["football", "cards", "toga"]), "Shop search title is missing its subject or brand"
         assert 'aria-label="Search catalogue"' in html, "Shop catalogue did not render"
     with request("/account/login") as response:
         assert response.status == 200 and "Welcome back" in response.read().decode()
