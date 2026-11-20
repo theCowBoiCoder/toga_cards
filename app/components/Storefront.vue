@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SITE_URL, SHOP_PAGE_SIZE, productPath, productTitle, productDescription, productSchema, jsonLd, type SeoProduct } from "#shared/seo";
 import { combinedPostage } from "#shared/shipping";
 import {
   ArrowUpRight,
@@ -12,9 +13,31 @@ import {
   Package,
   Layers,
 } from "lucide-vue-next";
-const props = defineProps<{ shopPage?: boolean }>();
+const props = defineProps<{ shopPage?: boolean; product?: SeoProduct }>();
 const { data, refresh } = await useFetch<any>("/api/shop/catalogue");
-const products = computed<any[]>(() => data.value?.products || []);
+const route = useRoute();
+const products = computed<any[]>(() => {
+  const all = data.value?.products || [];
+  return props.product && !all.some((card: any) => card.id === props.product!.id) ? [...all, props.product] : all;
+});
+const routePage = computed(() => /^[1-9]\d*$/.test(String(route.query.page || "1")) ? Math.min(Number(route.query.page || 1), 100000) : 1);
+useStoreSeo(() => ({
+  title: props.product ? `${productTitle(props.product)} | Toga Cards` : props.shopPage ? `Topps Premier League Football Cards & Singles${routePage.value > 1 ? ` – Page ${routePage.value}` : ""} | Toga Cards` : "Football Cards UK | Topps Premier League Singles | Toga Cards",
+  description: props.product ? productDescription(props.product) : props.shopPage ? "Shop Topps Flagship Premier League football cards, singles and inserts. Search by player, club or card number to complete your 2026/27 set. Combined UK postage." : "Buy football cards from Toga Cards, an independent UK card shop. Explore Topps Premier League singles, inserts and cards to complete your 2026/27 collection.",
+  path: props.product ? productPath(props.product) : props.shopPage ? `/shop${routePage.value > 1 ? `?page=${routePage.value}` : ""}` : "/",
+  image: props.product?.photo, product: !!props.product,
+  noindex: !!data.value?.demo || !!route.query.checkout,
+}));
+useHead(() => ({ script: [{ type: "application/ld+json", key: "store-schema", innerHTML: jsonLd(props.product ? [productSchema(props.product), {
+  "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+    { "@type": "ListItem", position: 2, name: "Football cards", item: SITE_URL + "/shop" },
+    { "@type": "ListItem", position: 3, name: productTitle(props.product), item: SITE_URL + productPath(props.product) },
+  ],
+}] : {
+  "@context": "https://schema.org", "@type": "OnlineStore", "@id": SITE_URL + "/#store", name: "Toga Cards", url: SITE_URL, sameAs: ["https://www.tiktok.com/@toga.cards"],
+  description: "Independent UK shop for football trading cards, Topps Premier League singles and inserts.",
+}) }] }));
 const shippingId = ref('');
 const shippingOptions = computed<any[]>(() => (data.value?.shippingOptions || [])
   .map((option: any) => ({ ...option, price: combinedPostage(option, count.value) }))
@@ -25,7 +48,7 @@ const search = ref(""),
   club = ref(""),
   variant = ref(""),
   onlyStock = ref(false),
-  page = ref(1),
+  page = ref(routePage.value),
   sort = ref("number");
 const basketOpen = ref(false),
   busy = ref(false),
@@ -55,7 +78,11 @@ watch(
   },
   { deep: true },
 );
-watch([search, club, variant, onlyStock, sort], () => (page.value = 1));
+watch(routePage, value => { page.value = value; });
+watch([search, club, variant, onlyStock, sort], () => {
+  page.value = 1;
+  if (route.query.page) void navigateTo({ path: route.path, query: { ...route.query, page: undefined } }, { replace: true });
+});
 const money = (p: number) =>
   new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(
     p / 100,
@@ -89,7 +116,10 @@ const results = computed(() => {
           : a.number.localeCompare(b.number, "en", { numeric: true }),
     );
 });
-const visible = computed(() => results.value.slice(0, page.value * 12));
+if (!props.product && routePage.value > Math.max(1, Math.ceil(results.value.length / SHOP_PAGE_SIZE))) {
+  throw createError({ statusCode: 404, statusMessage: "Catalogue page not found" });
+}
+const visible = computed(() => results.value.slice((page.value - 1) * SHOP_PAGE_SIZE, page.value * SHOP_PAGE_SIZE));
 const featured = computed(() => {
   const picks = ["Bukayo Saka", "Erling Haaland", "Cole Palmer"];
   return picks
@@ -161,7 +191,6 @@ async function checkout() {
     busy.value = false;
   }
 }
-const route = useRoute();
 async function cancelReturnedCheckout() {
   if (route.query.checkout !== "cancelled" || typeof route.query.order !== "string") return;
   const orderId = route.query.order;
@@ -201,7 +230,7 @@ async function cancelReturnedCheckout() {
       <nav aria-label="Main navigation">
         <NuxtLink to="/shop">Shop all cards</NuxtLink
         ><a
-          href="/shop?collection=set"
+          href="/shop"
           @click.prevent="
             search = '';
             navigateTo('/shop');
@@ -225,10 +254,11 @@ async function cancelReturnedCheckout() {
       <section v-if="!shopPage" class="hero">
         <div class="hero-copy">
           <div class="eyebrow">THE FOOTBALL CARD COLLECTION</div>
-          <h1>Your collection.<br /><em>Your next card.</em></h1>
+          <h1>Football cards.<br /><em>Your next favourite.</em></h1>
           <p>
-            Find your favourite players, explore the inserts and tick off
-            the missing numbers. Football cards, all in one place.
+            Shop Topps Flagship Premier League singles and inserts for your
+            2026/27 collection. Find your favourite players and the missing
+            card numbers to complete your set, with combined UK postage.
           </p>
           <NuxtLink class="orange-button" to="/shop"
             >Shop the collection <ArrowRight :size="20"
@@ -245,7 +275,7 @@ async function cancelReturnedCheckout() {
             class="hero-card"
             :class="`hero-card-${i}`"
           >
-            <CardArtwork :card="c" :index="i" />
+            <CardArtwork :card="c" :index="i" :priority="i === 0" />
           </div>
           <div class="art-note">Premier League <span>Singles & inserts</span></div>
         </div>
@@ -255,7 +285,24 @@ async function cancelReturnedCheckout() {
         ><span><Package :size="20" /> One basket. Combined postage.</span
         ><span><ShieldCheck :size="20" /> Clear prices & stock availability</span>
       </section>
-      <section class="catalogue" id="catalogue">
+      <section v-if="product" class="product-detail">
+        <nav aria-label="Breadcrumb"><NuxtLink to="/">Home</NuxtLink> / <NuxtLink to="/shop">Football cards</NuxtLink> / {{ product.player }}</nav>
+        <div class="detail-layout">
+          <CardArtwork :card="product" priority />
+          <div>
+            <div class="eyebrow">{{ product.club }}</div>
+            <h1>{{ productTitle(product) }}</h1>
+            <p>{{ productDescription(product) }}</p>
+            <dl><dt>Card number</dt><dd>{{ product.number }}</dd><dt>Variant</dt><dd>{{ product.variant }}</dd><dt>Condition</dt><dd>{{ product.condition }}</dd><dt>SKU</dt><dd>{{ product.sku }}</dd></dl>
+            <p class="detail-price">{{ money(product.price || 0) }}</p>
+            <p>{{ product.available > 0 ? `${product.available} available` : 'Currently out of stock' }}</p>
+            <button class="orange-button" :disabled="!product.available || (basket[product.id] || 0) >= product.available" @click="add(product)">Add to basket</button>
+            <p>Combined UK postage is calculated in your basket. Product photos appear where supplied; catalogue illustrations are labelled.</p>
+            <NuxtLink to="/shop" class="text-link">Browse more football cards</NuxtLink>
+          </div>
+        </div>
+      </section>
+      <section v-else class="catalogue" id="catalogue">
         <div class="section-heading">
           <div>
             <div class="eyebrow">
@@ -263,13 +310,13 @@ async function cancelReturnedCheckout() {
                 shopPage ? "THE TOGA CARDS SHOP" : "BROWSE THE COLLECTION"
               }}
             </div>
-            <h2>
+            <component :is="shopPage ? 'h1' : 'h2'">
               {{
                 shopPage
-                  ? "Football cards"
+                  ? "Topps Premier League football cards"
                   : "Find your next addition"
               }}
-            </h2>
+            </component>
           </div>
           <span class="catalogue-count">
             {{ products.length.toLocaleString() }}
@@ -339,7 +386,7 @@ async function cancelReturnedCheckout() {
             <div class="product-meta">
               {{ c.club }} <span>#{{ c.number }}</span>
             </div>
-            <h3>{{ c.player }}</h3>
+            <h3><NuxtLink v-if="c.price" :to="productPath(c)">{{ c.player }}</NuxtLink><template v-else>{{ c.player }}</template></h3>
             <small v-if="c.price && c.sku">SKU: {{ c.sku }}</small>
             <p>{{ c.collection }} · {{ c.season }}</p>
             <div class="product-bottom">
@@ -360,13 +407,11 @@ async function cancelReturnedCheckout() {
             </div>
           </article>
         </div>
-        <button
-          v-if="visible.length < results.length"
-          class="load-more"
-          @click="page++"
-        >
-          Load more cards <ArrowRight :size="18" />
-        </button>
+        <nav v-if="results.length > SHOP_PAGE_SIZE" class="catalogue-pagination" aria-label="Catalogue pages">
+          <NuxtLink v-if="page > 1" :to="{ path: '/shop', query: page > 2 ? { page: page - 1 } : {} }">Previous page</NuxtLink>
+          <span>Page {{ page }} of {{ Math.ceil(results.length / SHOP_PAGE_SIZE) }}</span>
+          <NuxtLink v-if="page * SHOP_PAGE_SIZE < results.length" :to="{ path: '/shop', query: { page: page + 1 } }">Next page</NuxtLink>
+        </nav>
       </section>
       <section v-if="!shopPage" class="set-banner">
         <div>
@@ -401,6 +446,7 @@ async function cancelReturnedCheckout() {
     <footer class="shop-footer">
       <NuxtLink to="/" class="wordmark"><span class="brand-monogram">T</span>toga<span>cards</span></NuxtLink
       ><span>Football cards. For your collection.</span
+      ><a href="https://www.tiktok.com/@toga.cards" rel="me noopener" target="_blank">TikTok @toga.cards</a
       ><a href="/admin">Admin sign in <ArrowUpRight :size="14" /></a
       ><small
         >Independent card shop. Not affiliated with Topps or the Premier

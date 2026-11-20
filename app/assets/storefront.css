@@ -176,3 +176,18 @@
 
 .store .delivery-choice { display: grid; gap: 8px; margin-bottom: 22px; font-size: 13px; }
 .delivery-choice small { color: var(--muted); font-weight: 400; }
+
+.section-heading h1 { margin: 12px 0; font-size: 32px; line-height: 1.2; font-weight: 650; letter-spacing: -1px; }
+.product h3 a:hover { text-decoration: underline; }
+.catalogue-pagination { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 24px; margin-top: 32px; font-size: 16px; }
+.catalogue-pagination a { padding: 12px 18px; border: 1px solid var(--line); border-radius: 6px; }
+.product-detail { padding: 32px 40px 64px; max-width: 1200px; margin: auto; }
+.product-detail nav { margin-bottom: 28px; font-size: 16px; }
+.product-detail nav a { text-decoration: underline; }
+.detail-layout { display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: 48px; align-items: start; }
+.detail-layout h1 { margin: 16px 0; font-size: clamp(26px, 4vw, 38px); line-height: 1.2; }
+.detail-layout p { font-size: 16px; line-height: 1.7; }
+.detail-layout dl { display: grid; grid-template-columns: auto 1fr; gap: 12px 24px; font-size: 16px; }
+.detail-layout dd { margin: 0; }
+.detail-price { font-weight: 700; font-size: 28px !important; }
+@media (max-width: 720px) { .product-detail { padding: 24px 20px 40px; } .detail-layout { grid-template-columns: 1fr; gap: 28px; } .detail-layout > .card-art { max-width: 320px; width: 100%; margin: auto; } }

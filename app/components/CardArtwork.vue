@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ card: any; index?: number }>();
+const props = defineProps<{ card: any; index?: number; priority?: boolean }>();
 const tone = computed(
   () =>
     ["#a62d29", "#286b92", "#e2b938", "#31765a", "#563b7b"][
@@ -12,8 +12,9 @@ const tone = computed(
     <img
       v-if="card.photo"
       :src="card.photo"
-      :alt="`${card.player} ${card.variant} card`"
-      loading="lazy"
+      :alt="`${card.player}, ${card.club}, ${card.collection} ${card.season}, #${card.number} ${card.variant} football card`"
+      :loading="priority ? 'eager' : 'lazy'"
+      decoding="async"
     />
     <div v-else class="card-sample">
       <div class="card-mast">

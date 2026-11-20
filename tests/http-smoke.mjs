@@ -153,6 +153,21 @@ try {
   const singleProduct = (await request("/api/admin/shop")).products.find((product) => product.id === card.id);
   assert.equal(singleProduct.price, 199);
   assert.equal(singleProduct.available, 2);
+  const productUrl = `/cards/${singleProduct.id}-smoke-fixture-test-only-2026-27-test-base`;
+  const detailResponse = await fetch(origin + productUrl);
+  assert.equal(detailResponse.status, 200, 'published card is server rendered');
+  const detailHtml = await detailResponse.text();
+  assert.match(detailHtml, /<h1[^>]*>Smoke fixture/);
+  assert.match(detailHtml, /rel="canonical"/);
+  assert.match(detailHtml, /application\/ld\+json/);
+  assert.match(detailHtml, /"price":"1.99"/);
+  assert.match(detailHtml, /"availability":"https:\/\/schema.org\/InStock"/);
+  assert.equal((await fetch(origin + '/cards/999999-no-card')).status, 404);
+  assert.equal((await fetch(origin + '/api/shop/products/not-an-id')).status, 404);
+  const redirect = await fetch(origin + `/cards/${singleProduct.id}-old-name`, { redirect: 'manual' });
+  assert.equal(redirect.status, 301);
+  assert.equal(redirect.headers.get('location'), productUrl);
+
   const publishingContext = await request("/api/admin/ebay-create");
   assert.equal(publishingContext.products.find((product) => product.id === card.id).sku, single.sku);
   assert.equal("tokens" in publishingContext, false);
@@ -172,6 +187,13 @@ try {
   assert.doesNotMatch(shopHtml, /In stock only/);
   await request("/api/admin/shop-visibility", { enabled: false });
   assert.equal((await request("/api/admin/shop")).inStockOnly, false);
+  const pageTwo = await fetch(origin + '/shop?page=2').then(response => response.text());
+  assert.match(pageTwo, /href="https:\/\/togacards.co.uk\/shop\?page=2"/);
+  assert.match(pageTwo, /Page 2 of/);
+  assert.equal((await fetch(origin + '/shop?page=99999')).status, 404);
+  assert.match(await fetch(origin + '/robots.txt').then(response => response.text()), /Disallow: \//);
+  assert.equal((await fetch(origin + '/sitemap.xml')).status, 200);
+
   const fullCatalogue = await fetch(origin + "/api/shop/catalogue").then((r) => r.json());
   assert.equal(fullCatalogue.products.length, 1139);
   db = new Database(join(directory, "cards.sqlite"));

@@ -7,7 +7,9 @@ export default defineNuxtConfig({
   shadcn: { prefix: "", componentDir: "./app/components/ui" },
   app: {
     head: {
-      title: "TOGA Cards — Find your next favourite",
+      title: "Football Cards UK | Topps Premier League Singles | Toga Cards",
+      htmlAttrs: { lang: "en-GB" },
+      link: [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
       meta: [
         {
           name: "description",
